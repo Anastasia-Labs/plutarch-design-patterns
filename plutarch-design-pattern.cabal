@@ -117,6 +117,8 @@ common test-dependencies
 library
   import:          lang
   exposed-modules:
+    Plutarch.StakeValidator
+    Plutarch.Utils
 
   build-depends:
     , aeson
