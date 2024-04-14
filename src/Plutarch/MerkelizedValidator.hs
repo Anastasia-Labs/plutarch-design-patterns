@@ -8,11 +8,12 @@ module Plutarch.MerkelizedValidator(
   withdraw,
 ) where
 
-import Plutarch.Api.V1.AssocMap qualified as AssocMap
-import Plutarch.Api.V2 (PScriptPurpose (..), PStakeValidator, PStakingCredential (..), PValidator)
-import Plutarch.Api.V2.Contexts (PTxInfo)
+-- import Plutarch.Api.V1.AssocMap qualified as AssocMap
+-- import Plutarch.Api.V2 (PScriptPurpose (..), PStakeValidator, PStakingCredential (..), PValidator)
+import Plutarch.Api.V2 (PScriptPurpose (..), PStakeValidator, PStakingCredential (..))
+-- import Plutarch.Api.V2.Contexts (PTxInfo)
 import Plutarch.Prelude
-import Plutarch.Utils (ptryOwnInput)
+-- import Plutarch.Utils (ptryOwnInput)
 import "liqwid-plutarch-extra" Plutarch.Extra.TermCont (
   pletC,
   pletFieldsC,
@@ -22,9 +23,10 @@ import PlutusTx(BuiltinData)
 import Plutarch.Api.V1 qualified as V1
 import "liqwid-plutarch-extra" Plutarch.Extra.Map (ptryLookup)
 import Plutarch.Extra.Record (mkRecordConstr, (.=))
-import Plutarch.DataRepr (DerivePConstantViaData (DerivePConstantViaData), PDataFields)
-import Plutarch.Lift (PConstantDecl, PUnsafeLiftDecl (PLifted))
+-- import Plutarch.DataRepr (DerivePConstantViaData (DerivePConstantViaData), PDataFields)
+-- import Plutarch.Lift (PConstantDecl, PUnsafeLiftDecl (PLifted))
 import Plutarch.Unsafe (punsafeCoerce)
+import Plutarch.DataRepr (PDataFields)
 
 data WithdrawRedeemer = 
   WithdrawRedeemer 
@@ -41,18 +43,18 @@ newtype PWithdrawRedeemer (s::S) =
 instance DerivePlutusType PWithdrawRedeemer where type DPTStrat _ = PlutusTypeData
 instance PTryFrom PData PWithdrawRedeemer
 
-instance PUnsafeLiftDecl PWithdrawRedeemer where
-    type PLifted PWithdrawRedeemer = WithdrawRedeemer
+-- instance PUnsafeLiftDecl PWithdrawRedeemer where
+--     type PLifted PWithdrawRedeemer = WithdrawRedeemer
 
-deriving via
-    (DerivePConstantViaData WithdrawRedeemer PWithdrawRedeemer)
-    instance
-        PConstantDecl WithdrawRedeemer
+-- deriving via
+--     (DerivePConstantViaData WithdrawRedeemer PWithdrawRedeemer)
+--     instance
+--         PConstantDecl WithdrawRedeemer
 
 spend :: Term s PStakingCredential -> Term s (PBuiltinList PData) -> Term s (V1.PMap 'V1.Unsorted V1.PScriptPurpose V1.PRedeemer) -> Term s (PBuiltinList PData)
-spend stakCred inputState redeemers= do
-  spending <- plet $ mkRecordConstr PRewarding $ #_0 .= pdata stakCred
-  redeemer' <- plet $ ptryLookup # spending # redeemers
+spend stakCred inputState redeemers = unTermCont $ do
+  spending <- pletC $ mkRecordConstr PRewarding $ #_0 .= pdata stakCred
+  redeemer' <- pletC $ ptryLookup # spending # redeemers
   V1.PRedeemer redeemer <- pmatchC redeemer'
   let red = punsafeCoerce @_ @_ @PWithdrawRedeemer redeemer
   redF <- pletFieldsC @'["inputState", "outputState"] red
