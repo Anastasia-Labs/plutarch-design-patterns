@@ -117,6 +117,7 @@ common test-dependencies
 library
   import:          lang
   exposed-modules:
+    Plutarch.MerkelizedValidator
     Plutarch.StakeValidator
     Plutarch.Utils
 
