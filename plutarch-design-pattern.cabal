@@ -143,10 +143,10 @@ library
 
   hs-source-dirs:  src
 
--- test-suite plutarch-design-pattern-test
---   import:         lang, test-dependencies
---   type:           exitcode-stdio-1.0
---   main-is:        Spec.hs
---   hs-source-dirs: test
---   other-modules:  Spec.design-patternSpec
---   build-depends:  plutarch-design-pattern
+test-suite plutarch-design-pattern-test
+  import:         lang, test-dependencies
+  type:           exitcode-stdio-1.0
+  main-is:        Spec.hs
+  hs-source-dirs: test
+  other-modules:  Spec.MerkelizedValidatorSpec
+  build-depends:  plutarch-design-pattern

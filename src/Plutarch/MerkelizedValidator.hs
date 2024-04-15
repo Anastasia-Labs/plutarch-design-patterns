@@ -2,34 +2,33 @@
 {-# LANGUAGE TypeFamilyDependencies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Plutarch.MerkelizedValidator(
+module Plutarch.MerkelizedValidator (
   spend,
   withdraw,
 ) where
 
+import Plutarch.Api.V1 qualified as V1
 import Plutarch.Api.V2 (PScriptPurpose (..), PStakeValidator, PStakingCredential (..))
+import Plutarch.DataRepr (PDataFields)
+import Plutarch.Extra.Record (mkRecordConstr, (.=))
 import Plutarch.Prelude
+import Plutarch.Unsafe (punsafeCoerce)
+import PlutusTx (BuiltinData)
+import "liqwid-plutarch-extra" Plutarch.Extra.Map (ptryLookup)
 import "liqwid-plutarch-extra" Plutarch.Extra.TermCont (
   pletC,
   pletFieldsC,
   pmatchC,
  )
-import PlutusTx(BuiltinData)
-import Plutarch.Api.V1 qualified as V1
-import "liqwid-plutarch-extra" Plutarch.Extra.Map (ptryLookup)
-import Plutarch.Extra.Record (mkRecordConstr, (.=))
-import Plutarch.Unsafe (punsafeCoerce)
-import Plutarch.DataRepr (PDataFields)
 
-data WithdrawRedeemer = 
-  WithdrawRedeemer 
-    { inputState :: [BuiltinData]
-    , outputState :: [BuiltinData]
-    }
+data WithdrawRedeemer = WithdrawRedeemer
+  { inputState :: [BuiltinData]
+  , outputState :: [BuiltinData]
+  }
   deriving stock (Generic, Eq, Show)
 
-newtype PWithdrawRedeemer (s::S) = 
-  PWithdrawRedeemer (Term s (PDataRecord '["inputState" ':= PBuiltinList PData, "outputState" ':= PBuiltinList PData ]))
+newtype PWithdrawRedeemer (s :: S)
+  = PWithdrawRedeemer (Term s (PDataRecord '["inputState" ':= PBuiltinList PData, "outputState" ':= PBuiltinList PData]))
   deriving stock (Generic)
   deriving anyclass (PlutusType, PIsData, PDataFields, PShow)
 
@@ -43,12 +42,13 @@ spend stakCred inputState redeemers = unTermCont $ do
   V1.PRedeemer redeemer <- pmatchC redeemer'
   let red = punsafeCoerce @_ @_ @PWithdrawRedeemer redeemer
   redF <- pletFieldsC @'["inputState", "outputState"] red
-  return $ 
-    pif (inputState #== redF.inputState)
+  return $
+    pif
+      (inputState #== redF.inputState)
       (redF.outputState)
       perror
 
-withdraw :: Term s (PBuiltinList PData  :--> PBuiltinList PData) -> Term s PStakeValidator
+withdraw :: Term s (PBuiltinList PData :--> PBuiltinList PData) -> Term s PStakeValidator
 withdraw f =
   plam $ \redeemer ctx -> unTermCont $ do
     let red = punsafeCoerce @_ @_ @PWithdrawRedeemer redeemer
