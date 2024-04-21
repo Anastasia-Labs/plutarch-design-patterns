@@ -119,6 +119,7 @@ library
   exposed-modules:
     Plutarch.MerkelizedValidator
     Plutarch.StakeValidator
+    Plutarch.TxLevelMinter
     Plutarch.Utils
 
   build-depends:
