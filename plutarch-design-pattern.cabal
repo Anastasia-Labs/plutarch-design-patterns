@@ -121,6 +121,7 @@ library
     Plutarch.StakeValidator
     Plutarch.TxLevelMinter
     Plutarch.Utils
+    Plutarch.ValidityRangeNormalization
 
   build-depends:
     , aeson
