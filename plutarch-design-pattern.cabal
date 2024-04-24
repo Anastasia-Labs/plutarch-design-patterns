@@ -123,6 +123,7 @@ library
     Plutarch.TxLevelMinter
     Plutarch.Utils
     Plutarch.ValidityRangeNormalization
+    Plutarch.SingularUTxOIndexerOneToMany
 
   build-depends:
     , aeson

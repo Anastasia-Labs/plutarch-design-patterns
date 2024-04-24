@@ -5,6 +5,8 @@
 module Plutarch.MerkelizedValidator (
   spend,
   withdraw,
+  WithdrawRedeemer (..),
+  PWithdrawRedeemer (..),
 ) where
 
 import Plutarch.Api.V1 qualified as V1
