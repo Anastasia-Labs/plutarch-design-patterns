@@ -119,6 +119,7 @@ library
   exposed-modules:
     Plutarch.MerkelizedValidator
     Plutarch.SingularUTxOIndexer
+    Plutarch.SingularUTxOIndexerOneToMany
     Plutarch.StakeValidator
     Plutarch.TxLevelMinter
     Plutarch.Utils

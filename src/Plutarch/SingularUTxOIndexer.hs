@@ -1,5 +1,7 @@
 module Plutarch.SingularUTxOIndexer (
   spend,
+  SpendRedeemer (..),
+  PSpendRedeemer (..),
 ) where
 
 import Plutarch.Api.V2 (
@@ -31,6 +33,7 @@ newtype PSpendRedeemer (s :: S)
 
 instance DerivePlutusType PSpendRedeemer where type DPTStrat _ = PlutusTypeData
 instance PTryFrom PData PSpendRedeemer
+
 spend :: Term s (PTxOut :--> PTxOut :--> PBool) -> Term s PValidator
 spend f =
   plam $ \_datum redeemer ctx -> unTermCont $ do
