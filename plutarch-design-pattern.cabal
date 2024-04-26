@@ -118,6 +118,7 @@ library
   import:          lang
   exposed-modules:
     Plutarch.MerkelizedValidator
+    Plutarch.MultiUTxOIndexer
     Plutarch.SingularUTxOIndexer
     Plutarch.SingularUTxOIndexerOneToMany
     Plutarch.StakeValidator

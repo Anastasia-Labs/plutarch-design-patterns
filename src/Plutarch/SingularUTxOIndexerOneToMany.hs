@@ -37,7 +37,7 @@ newtype PSpendRedeemer (s :: S)
 instance DerivePlutusType PSpendRedeemer where type DPTStrat _ = PlutusTypeData
 instance PTryFrom PData PSpendRedeemer
 
-data PMyAggregator (s :: S) = PMyAggregator (Term s PInteger) (Term s (PList PTxOut)) (Term s PInteger)
+data PMyAggregator (s :: S) = PMyAggregator (Term s PInteger) (Term s (PBuiltinList PTxOut)) (Term s PInteger)
   deriving stock (Generic)
   deriving anyclass (PlutusType, PEq, PShow)
 
@@ -46,7 +46,7 @@ instance DerivePlutusType PMyAggregator where type DPTStrat _ = PlutusTypeScott
 spend ::
   Term s (PTxInInfo :--> PBool) ->
   Term s (PTxOut :--> PTxOut :--> PBool) ->
-  Term s (PList PTxOut :--> PInteger :--> PBool) ->
+  Term s (PBuiltinList PTxOut :--> PInteger :--> PBool) ->
   Term s PValidator
 spend inputValidator inputOutputValidator collectiveOutputValidator =
   plam $ \_datum redeemer ctx -> unTermCont $ do
