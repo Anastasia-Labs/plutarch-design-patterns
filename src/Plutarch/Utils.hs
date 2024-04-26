@@ -5,6 +5,7 @@ module Plutarch.Utils (
   pcountOfUniqueTokens,
   ptryLookupValue,
   (#>),
+  preverse,
 ) where
 
 import Data.Text qualified as T
@@ -72,3 +73,8 @@ ptryLookupValue = phoistAcyclic $
 (#>) :: (POrd t) => Term s t -> Term s t -> Term s PBool
 a #> b = b #< a
 infix 4 #>
+
+preverse :: (PIsListLike l a) => Term s (l a :--> l a)
+preverse =
+  phoistAcyclic $
+    pfoldl # plam (\ys y -> pcons # y # ys) # pnil
