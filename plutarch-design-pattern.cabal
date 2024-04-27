@@ -120,6 +120,7 @@ library
     Plutarch.MerkelizedValidator
     Plutarch.MultiUTxOIndexer
     Plutarch.MultiUTxOIndexerOneToMany
+    Plutarch.Multivalidator
     Plutarch.SingularUTxOIndexer
     Plutarch.SingularUTxOIndexerOneToMany
     Plutarch.StakeValidator
@@ -154,5 +155,8 @@ test-suite plutarch-design-pattern-test
   type:           exitcode-stdio-1.0
   main-is:        Spec.hs
   hs-source-dirs: test
-  other-modules:  Spec.MerkelizedValidatorSpec
+  other-modules:
+    Spec.MerkelizedValidatorSpec
+    Spec.StakeValidatorSpec
+
   build-depends:  plutarch-design-pattern
