@@ -159,5 +159,6 @@ test-suite plutarch-design-pattern-test
     Spec.MerkelizedValidatorSpec
     Spec.StakeValidatorSpec
     Spec.TxLevelMinterSpec
+    Spec.Utils
 
   build-depends:  plutarch-design-pattern
