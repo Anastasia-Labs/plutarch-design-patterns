@@ -2,8 +2,10 @@ module Spec.StakeValidatorSpec (
   validator,
 ) where
 
-import Plutarch.Api.V2 (PScriptContext, PStakeValidator, PStakingCredential, PValidator)
+import Plutarch.Api.V2 (PStakeValidator, PStakingCredential, PValidator)
+import Plutarch.Api.V2.Contexts (PTxInfo)
 import Plutarch.Multivalidator qualified as Multivalidator
+import Plutarch.Prelude
 import Plutarch.StakeValidator qualified as StakeValidator
 
 spend :: Term s PValidator
@@ -11,13 +13,11 @@ spend = StakeValidator.spend
 
 withdrawLogic :: Term s (PData :--> PStakingCredential :--> PTxInfo :--> PUnit)
 withdrawLogic =
-  plam $ \redData ownValidator txInfo -> unTermCont $ do
+  plam $ \_ _ _ -> unTermCont $ do
     pure $ pconstant ()
 
 withdraw :: Term s PStakeValidator
-withdraw = phoistAcyclic $
-  plam $ \redeemer ctx -> unTermCont $ do
-    return $ StakeValidator.withdraw withdrawLogic redeemer ctx
+withdraw = StakeValidator.withdraw withdrawLogic
 
-validator :: Term s PStakeValidator
+validator :: Term s PValidator
 validator = Multivalidator.multivalidator withdraw spend
