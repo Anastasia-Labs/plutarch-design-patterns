@@ -8,5 +8,6 @@ main = do
   defaultMain $
     testGroup
       "Unit Test Group"
-      [ Spec.MerkelizedValidatorSpec.unitTest
+      [ Spec.MerkelizedValidatorSpec.spendUnitTest
+      , Spec.MerkelizedValidatorSpec.withdrawUnitTest
       ]

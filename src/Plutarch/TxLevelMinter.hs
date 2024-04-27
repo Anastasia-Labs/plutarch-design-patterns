@@ -5,7 +5,7 @@ module Plutarch.TxLevelMinter (
 
 import Plutarch.Api.V1.Address (PCredential (..))
 import Plutarch.Api.V1.Value (pnormalize)
-import Plutarch.Api.V2 (PCurrencySymbol (..), PScriptContext, PScriptPurpose (..), PStakeValidator, PTokenName)
+import Plutarch.Api.V2 (PCurrencySymbol (..), PMintingPolicy, PScriptContext, PScriptPurpose (..), PTokenName)
 import Plutarch.Api.V2.Contexts (PTxInfo)
 import Plutarch.Builtin (pasInt)
 import Plutarch.Monadic qualified as P
@@ -42,7 +42,7 @@ spend = phoistAcyclic $ plam $ \mintTN red ctx -> P.do
     (pconstant ())
     perror
 
-mint :: Term s (PData :--> PCurrencySymbol :--> PTxInfo :--> PUnit) -> Term s PStakeValidator
+mint :: Term s (PData :--> PCurrencySymbol :--> PTxInfo :--> PUnit) -> Term s PMintingPolicy
 mint mintLogic =
   plam $ \redeemer ctx -> unTermCont $ do
     ctxF <- pletFieldsC @'["txInfo", "purpose"] ctx
