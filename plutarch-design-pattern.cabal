@@ -157,6 +157,8 @@ test-suite plutarch-design-pattern-test
   hs-source-dirs: test
   other-modules:
     Spec.MerkelizedValidatorSpec
+    Spec.MultiUTxOIndexerOneToManySpec
+    Spec.MultiUTxOIndexerSpec
     Spec.SingularUTxOIndexerOneToManySpec
     Spec.SingularUTxOIndexerSpec
     Spec.StakeValidatorSpec
