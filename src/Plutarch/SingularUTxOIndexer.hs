@@ -1,3 +1,5 @@
+{-# LANGUAGE TemplateHaskell #-}
+
 module Plutarch.SingularUTxOIndexer (
   spend,
   SpendRedeemer (..),
@@ -13,7 +15,7 @@ import Plutarch.Builtin (pasInt)
 import Plutarch.DataRepr (PDataFields)
 import Plutarch.Prelude
 import Plutarch.Unsafe (punsafeCoerce)
-import PlutusTx (BuiltinData)
+import PlutusTx
 import "liqwid-plutarch-extra" Plutarch.Extra.TermCont (
   pletC,
   pletFieldsC,
@@ -21,10 +23,13 @@ import "liqwid-plutarch-extra" Plutarch.Extra.TermCont (
  )
 
 data SpendRedeemer = SpendRedeemer
-  { inIdx :: BuiltinData
-  , outIdx :: BuiltinData
+  { inIdx :: PlutusTx.BuiltinData
+  , outIdx :: PlutusTx.BuiltinData
   }
   deriving stock (Generic, Eq, Show)
+
+PlutusTx.makeLift ''SpendRedeemer
+PlutusTx.makeIsDataIndexed ''SpendRedeemer [('SpendRedeemer, 0)]
 
 newtype PSpendRedeemer (s :: S)
   = PSpendRedeemer (Term s (PDataRecord '["inIdx" ':= PData, "outIdx" ':= PData]))

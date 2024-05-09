@@ -1,9 +1,10 @@
-{-# LANGUAGE OverloadedRecordDot #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module Plutarch.SingularUTxOIndexerOneToMany (
   spend,
   SpendRedeemer (..),
   PSpendRedeemer (..),
+  matchAgg,
 ) where
 
 import Plutarch.Api.V2 (
@@ -16,7 +17,7 @@ import Plutarch.Builtin (pasInt)
 import Plutarch.DataRepr (PDataFields)
 import Plutarch.Prelude
 import Plutarch.Unsafe (punsafeCoerce)
-import PlutusTx (BuiltinData)
+import PlutusTx
 import "liqwid-plutarch-extra" Plutarch.Extra.TermCont (
   pletC,
   pletFieldsC,
@@ -24,10 +25,13 @@ import "liqwid-plutarch-extra" Plutarch.Extra.TermCont (
  )
 
 data SpendRedeemer = SpendRedeemer
-  { inIx :: BuiltinData
-  , outIxs :: [BuiltinData]
+  { inIx :: PlutusTx.BuiltinData
+  , outIxs :: [PlutusTx.BuiltinData]
   }
   deriving stock (Generic, Eq, Show)
+
+PlutusTx.makeLift ''SpendRedeemer
+PlutusTx.makeIsDataIndexed ''SpendRedeemer [('SpendRedeemer, 0)]
 
 newtype PSpendRedeemer (s :: S)
   = PSpendRedeemer (Term s (PDataRecord '["inIx" ':= PData, "outIxs" ':= PBuiltinList PData]))
@@ -59,13 +63,13 @@ spend inputValidator inputOutputValidator collectiveOutputValidator =
     input <- pletC $ pelemAt @PBuiltinList # (pasInt # redF.inIx) # txInfoF.inputs
     outIxs <- pletC $ pmap # pasInt # redF.outIxs
     inInputF <- pletFieldsC @'["outRef", "resolved"] input
+
     aggregated <-
       pletC $
         pfoldr
           # (matchAgg inputOutputValidator # inInputF.resolved # txInfoF.outputs)
           # pcon (PMyAggregator (plength # pfromData txInfoF.outputs) pnil 0)
           # outIxs
-
     return $ pmatch aggregated $ \case
       PMyAggregator _ outTxOuts outputCount -> unTermCont $ do
         return $
@@ -82,7 +86,7 @@ matchAgg inputOutputValidator = plam $ \input outputs curIdx p -> unTermCont $ d
   PMyAggregator prevIdx acc count <- pmatchC p
   return $
     pif
-      (curIdx #== prevIdx)
+      (ptraceIfFalse (pshow prevIdx) (curIdx #< prevIdx))
       ( P.do
           let outOutput = pelemAt @PBuiltinList # curIdx # outputs
           pif

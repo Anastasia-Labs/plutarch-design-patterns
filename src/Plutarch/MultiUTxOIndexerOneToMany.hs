@@ -1,4 +1,5 @@
 {-# LANGUAGE TemplateHaskell #-}
+{-# OPTIONS_GHC -Wno-unused-imports #-}
 
 module Plutarch.MultiUTxOIndexerOneToMany (
   withdraw,
@@ -6,6 +7,9 @@ module Plutarch.MultiUTxOIndexerOneToMany (
   WithdrawRedeemer (..),
   PIndices (..),
   PWithdrawRedeemer (..),
+  matchInputAgg,
+  matchInOutAgg,
+  matchOutputAgg,
 ) where
 
 import Plutarch.Api.V2 (
@@ -40,10 +44,17 @@ data Indices = Indices
   , outIdx :: [BuiltinData]
   }
   deriving stock (Generic, Eq, Show)
+
+PlutusTx.makeLift ''Indices
 PlutusTx.makeIsDataIndexed ''Indices [('Indices, 0)]
 
-newtype WithdrawRedeemer = WithdrawRedeemer {indices :: [Indices]}
+data WithdrawRedeemer
+  = None
+  | WithdrawRedeemer {indices :: [Indices]}
   deriving stock (Generic, Eq, Show)
+
+PlutusTx.makeLift ''WithdrawRedeemer
+PlutusTx.makeIsDataIndexed ''WithdrawRedeemer [('None, 0), ('WithdrawRedeemer, 1)]
 
 newtype PIndices (s :: S)
   = PIndices (Term s (PDataRecord '["inIdx" ':= PData, "outIdxs" ':= PBuiltinList PData]))
@@ -62,10 +73,11 @@ deriving via
   instance
     PConstantDecl Indices
 
-newtype PWithdrawRedeemer (s :: S)
-  = PWithdrawRedeemer (Term s (PDataRecord '["indices" ':= PBuiltinList (PAsData PIndices)]))
+data PWithdrawRedeemer (s :: S)
+  = PNone (Term s (PDataRecord '[]))
+  | PWithdrawRedeemer (Term s (PDataRecord '["indices" ':= PBuiltinList (PAsData PIndices)]))
   deriving stock (Generic)
-  deriving anyclass (PlutusType, PIsData, PDataFields)
+  deriving anyclass (PlutusType, PIsData)
 
 instance DerivePlutusType PWithdrawRedeemer where type DPTStrat _ = PlutusTypeData
 deriving anyclass instance
@@ -133,7 +145,7 @@ matchInOutAgg inputValidator inputOutputValidator collectiveOutputValidator outp
           return $
             pif
               (collectiveOutputValidator # (preverse # outUTxOsReversed) # outputCOunt)
-              (pcon (PMyInOutAgg curInIx newLatestOutIx inputCountSoFar))
+              (pcon (PMyInOutAgg curInIx newLatestOutIx (inputCountSoFar + 1)))
               perror
       )
       perror
@@ -160,7 +172,8 @@ withdrawLogic ::
 withdrawLogic inputValidator inputOutputValidator collectiveOutputValidator =
   plam $ \redData ownValidator txInfo -> unTermCont $ do
     red <- pletC $ punsafeCoerce @_ @_ @PWithdrawRedeemer redData
-    redF <- pletFieldsC @'["indices"] red
+    PWithdrawRedeemer wrdm <- pmatchC red
+    redF <- pletFieldsC @'["indices"] wrdm
     txInfoF <- pletFieldsC @'["inputs", "outputs"] txInfo
     inputAggregated <-
       pletC $

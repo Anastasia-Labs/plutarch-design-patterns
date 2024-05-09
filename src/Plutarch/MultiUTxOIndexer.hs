@@ -40,10 +40,17 @@ data Indices = Indices
   , outIdx :: BuiltinData
   }
   deriving stock (Generic, Eq, Show)
+
+PlutusTx.makeLift ''Indices
 PlutusTx.makeIsDataIndexed ''Indices [('Indices, 0)]
 
-newtype WithdrawRedeemer = WithdrawRedeemer {indices :: [Indices]}
+data WithdrawRedeemer
+  = None
+  | WithdrawRedeemer {indices :: [Indices]}
   deriving stock (Generic, Eq, Show)
+
+PlutusTx.makeLift ''WithdrawRedeemer
+PlutusTx.makeIsDataIndexed ''WithdrawRedeemer [('None, 0), ('WithdrawRedeemer, 1)]
 
 newtype PIndices (s :: S)
   = PIndices (Term s (PDataRecord '["inIdx" ':= PData, "outIdx" ':= PData]))
@@ -62,14 +69,22 @@ deriving via
   instance
     PConstantDecl Indices
 
-newtype PWithdrawRedeemer (s :: S)
-  = PWithdrawRedeemer (Term s (PDataRecord '["indices" ':= PBuiltinList (PAsData PIndices)]))
+data PWithdrawRedeemer (s :: S)
+  = PNone (Term s (PDataRecord '[]))
+  | PWithdrawRedeemer (Term s (PDataRecord '["indices" ':= PBuiltinList (PAsData PIndices)]))
   deriving stock (Generic)
-  deriving anyclass (PlutusType, PIsData, PDataFields)
+  deriving anyclass (PlutusType, PIsData)
 
 instance DerivePlutusType PWithdrawRedeemer where type DPTStrat _ = PlutusTypeData
 deriving anyclass instance
   PTryFrom PData (PAsData PWithdrawRedeemer)
+instance PUnsafeLiftDecl PWithdrawRedeemer where
+  type PLifted PWithdrawRedeemer = WithdrawRedeemer
+
+deriving via
+  (DerivePConstantViaData WithdrawRedeemer PWithdrawRedeemer)
+  instance
+    PConstantDecl WithdrawRedeemer
 
 data PMyInputAgg (s :: S) = PMyInputAgg (Term s (PBuiltinList PTxInInfo)) (Term s PInteger)
   deriving stock (Generic)
@@ -124,7 +139,8 @@ withdrawLogic :: Term s (PTxOut :--> PTxOut :--> PBool) -> Term s (PData :--> PS
 withdrawLogic inoutValidator =
   plam $ \redData ownValidator txInfo -> unTermCont $ do
     red <- pletC $ punsafeCoerce @_ @_ @PWithdrawRedeemer redData
-    redF <- pletFieldsC @'["indices"] red
+    PWithdrawRedeemer wrdm <- pmatchC red
+    redF <- pletFieldsC @'["indices"] wrdm
     txInfoF <- pletFieldsC @'["inputs", "outputs"] txInfo
     inputAggregated <-
       pletC $
