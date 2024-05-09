@@ -1,4 +1,5 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilyDependencies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
@@ -11,11 +12,15 @@ module Plutarch.MerkelizedValidator (
 
 import Plutarch.Api.V1 qualified as V1
 import Plutarch.Api.V2 (PScriptPurpose (..), PStakeValidator, PStakingCredential (..))
-import Plutarch.DataRepr (PDataFields)
+import Plutarch.DataRepr (
+  DerivePConstantViaData (DerivePConstantViaData),
+  PDataFields,
+ )
 import Plutarch.Extra.Record (mkRecordConstr, (.=))
+import Plutarch.Lift (PConstantDecl, PUnsafeLiftDecl (PLifted))
 import Plutarch.Prelude
 import Plutarch.Unsafe (punsafeCoerce)
-import PlutusTx (BuiltinData)
+import PlutusTx
 import "liqwid-plutarch-extra" Plutarch.Extra.Map (ptryLookup)
 import "liqwid-plutarch-extra" Plutarch.Extra.TermCont (
   pletC,
@@ -29,13 +34,24 @@ data WithdrawRedeemer = WithdrawRedeemer
   }
   deriving stock (Generic, Eq, Show)
 
+PlutusTx.makeIsDataIndexed
+  ''WithdrawRedeemer
+  [ ('WithdrawRedeemer, 0)
+  ]
+
 newtype PWithdrawRedeemer (s :: S)
   = PWithdrawRedeemer (Term s (PDataRecord '["inputState" ':= PBuiltinList PData, "outputState" ':= PBuiltinList PData]))
   deriving stock (Generic)
   deriving anyclass (PlutusType, PIsData, PDataFields, PShow)
 
 instance DerivePlutusType PWithdrawRedeemer where type DPTStrat _ = PlutusTypeData
-instance PTryFrom PData PWithdrawRedeemer
+deriving anyclass instance PTryFrom PData PWithdrawRedeemer
+instance PUnsafeLiftDecl PWithdrawRedeemer where
+  type PLifted PWithdrawRedeemer = WithdrawRedeemer
+deriving via
+  (DerivePConstantViaData WithdrawRedeemer PWithdrawRedeemer)
+  instance
+    PConstantDecl WithdrawRedeemer
 
 spend :: Term s PStakingCredential -> Term s (PBuiltinList PData) -> Term s (V1.PMap 'V1.Unsorted V1.PScriptPurpose V1.PRedeemer) -> Term s (PBuiltinList PData)
 spend stakCred inputState redeemers = unTermCont $ do
@@ -59,4 +75,7 @@ withdraw f =
     PRewarding _ <- pmatchC ctxF.purpose
     return $
       popaque $
-        (f # redF.inputState) #== redF.outputState
+        pif
+          ((f # redF.inputState) #== redF.outputState)
+          (pconstant ())
+          perror
