@@ -1,3 +1,7 @@
+{- |
+Module      : Spec.StakeValidatorSpec
+Description : Test suite for the Stake Validator in a Plutarch smart contract environment.
+-}
 module Spec.StakeValidatorSpec (
   validator,
   unitTest,
@@ -34,9 +38,11 @@ import PlutusLedgerApi.V2 (
 import PlutusTx qualified
 import Test.Tasty (TestTree)
 
+-- | Implements the spending logic.
 spend :: Term s PValidator
 spend = StakeValidator.spend
 
+-- | Implements the withdrawal logic.
 withdrawLogic :: Term s (PData :--> PStakingCredential :--> PTxInfo :--> PUnit)
 withdrawLogic =
   plam $ \_ _ _ -> unTermCont $ do
@@ -45,6 +51,7 @@ withdrawLogic =
 withdraw :: Term s PStakeValidator
 withdraw = StakeValidator.withdraw withdrawLogic
 
+-- | Core validator that combines spend and withdraw functionalities.
 validator :: Term s PValidator
 validator = Multivalidator.multivalidator withdraw spend
 
@@ -68,6 +75,7 @@ inputUTXO =
     , withRefIndex 1
     ]
 
+-- | Context setup for standard spend tests including necessary UTxO and withdrawal credentials.
 spendCtx :: ScriptContext
 spendCtx =
   buildSpending' $
@@ -86,6 +94,7 @@ spendIncorrectOutRefCtx =
       , withdrawal rewardingCred 1
       ]
 
+-- | Context setup for successful withdrawal tests.
 withdrawCtx :: ScriptContext
 withdrawCtx =
   buildRewarding' $
@@ -93,10 +102,12 @@ withdrawCtx =
       [ withRewarding rewardingCred
       ]
 
+-- | Context setup for withdrawal tests expected to fail.
 badWithdrawCtx :: ScriptContext
 badWithdrawCtx =
   buildSpending' $ mconcat []
 
+-- | Unit tests to verify the correct behavior and error handling of the validator under various scenarios.
 unitTest :: TestTree
 unitTest = tryFromPTerm "Stake Validator Unit Test" validator $ do
   testEvalCase

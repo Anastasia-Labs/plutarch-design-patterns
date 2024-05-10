@@ -1,3 +1,7 @@
+{- |
+Module      : Spec.MultiUTxOIndexerOneToManySpec
+Description : Test suite for validating UTxO indexation in a multi-validator setup using the Plutarch environment.
+-}
 module Spec.MultiUTxOIndexerOneToManySpec (
   validator,
   unitTest,
@@ -36,12 +40,15 @@ import PlutusTx.Builtins (mkI)
 import Spec.Utils qualified as Utils
 import Test.Tasty (TestTree)
 
+-- | Handles the spend logic using the basic Stake Validator.
 spend :: Term s PValidator
 spend = StakeValidator.spend
 
+-- | Handles withdrawal logic with additional indexing validations for multi-UTxO scenarios.
 withdraw :: Term s PStakeValidator
 withdraw = MultiUTxOIndexerOneToMany.withdraw Utils.inputValidator Utils.inputOutputValidator Utils.collectiveOutputValidator
 
+-- | Combines staking and spending validation into a single composite validator.
 validator :: Term s PValidator
 validator = Multivalidator.multivalidator withdraw spend
 
@@ -72,6 +79,7 @@ outputUTXO =
     , withValue (singleton "" "" 4_000_000)
     ]
 
+-- | Context setup for spend transactions including mock UTxOs and withdrawal.
 spendCtx :: ScriptContext
 spendCtx =
   buildSpending' $
@@ -99,6 +107,7 @@ badRedeemer =
         }
     ]
 
+-- | Context setup for withdrawal transactions, integrating input and output UTxOs.
 withdrawCtx :: ScriptContext
 withdrawCtx =
   buildRewarding' $
@@ -108,6 +117,7 @@ withdrawCtx =
       , withRewarding rewardingCred
       ]
 
+-- | Primary unit tests for validating the correct and incorrect behaviors of spend and withdraw functions.
 unitTest :: TestTree
 unitTest = tryFromPTerm "Multi UTxO Indexer One To Many Unit Test" validator $ do
   testEvalCase

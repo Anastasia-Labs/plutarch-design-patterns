@@ -95,6 +95,15 @@ cabal build all
 
 ![plutarch-design-patterns.gif](/assets/images/plutarch-design-patterns.gif)
 
+Test:
+
+```sh
+cabal test --test-show-details=direct
+```
+
+![test_report.png](/assets/images/test_report.png)
+
+
 ## Provided Patterns
 
 ### Stake Validator

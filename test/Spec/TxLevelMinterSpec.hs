@@ -1,3 +1,7 @@
+{- |
+Module      : Spec.TxLevelMinterSpec
+Description : Test suite for a transaction-level minter validator in a Plutarch smart contract environment.
+-}
 module Spec.TxLevelMinterSpec (
   validator,
   unitTest,
@@ -35,19 +39,23 @@ import PlutusLedgerApi.V2 (
 import PlutusTx qualified
 import Test.Tasty (TestTree)
 
+-- | Implements the spending logic, including validation of the custom token 'BEACON'.
 spend :: Term s PValidator
 spend = phoistAcyclic $
   plam $ \_ redeemer ctx -> unTermCont $ do
     return (popaque $ TxLevelMinter.spend # pconstant "BEACON" # redeemer # ctx)
 
+-- | Simple minting logic that just returns unit (no actual validation logic included for simplicity).
 mintLogic :: Term s (PData :--> PCurrencySymbol :--> PTxInfo :--> PUnit)
 mintLogic =
   plam $ \_ _ _ -> unTermCont $ do
     pure $ pconstant ()
 
+-- | Minting policy that encapsulates the minting behavior.
 mintingPolicy :: Term s PMintingPolicy
 mintingPolicy = TxLevelMinter.mint mintLogic
 
+-- | Core validator that combines spending and minting functionalities into a single validator logic.
 validator :: Term s PValidator
 validator = Multivalidator.multivalidator mintingPolicy spend
 
@@ -74,6 +82,7 @@ inputUTXO =
 mintedValue :: Value
 mintedValue = singleton "65c4b5e51c3c58c15af080106e8ce05b6efbb475aa5e5c5ca9372a45" "BEACON" 1
 
+-- | Context for spend validation, including input, output, withdrawal of staking credentials, and minting of a token.
 spendCtx :: ScriptContext
 spendCtx =
   buildSpending' $
@@ -84,6 +93,7 @@ spendCtx =
       , mint mintedValue
       ]
 
+-- | Context for validating minting actions, configured to handle the minting of the custom token.
 mintCtx :: ScriptContext
 mintCtx =
   buildMinting' $
@@ -91,6 +101,7 @@ mintCtx =
       [ mint mintedValue
       ]
 
+-- | Unit tests to ensure the validator behaves as expected under various scenarios including correct and incorrect token minting.
 unitTest :: TestTree
 unitTest = tryFromPTerm "Tx Level Minter Unit Test" validator $ do
   testEvalCase
