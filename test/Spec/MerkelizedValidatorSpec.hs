@@ -1,3 +1,7 @@
+{- |
+Module      : Spec.MerkelizedValidatorSpec
+Description : Test suite for the Merkelized Validator functions in a Plutarch smart contract environment.
+-}
 module Spec.MerkelizedValidatorSpec (
   psumOfSquares,
   spendUnitTest,
@@ -35,12 +39,14 @@ import "liqwid-plutarch-extra" Plutarch.Extra.TermCont (
   pletFieldsC,
  )
 
+-- | Calculates the sum of squares of integers provided as a list of 'PData'.
 psumOfSquares :: (PIsListLike list PData, PIsListLike list PInteger) => Term s (PBuiltinList PData :--> list PData)
 psumOfSquares =
   plam $ \xs ->
     let result = pfoldl # plam (\y x -> (x #* x) #+ y) # 0 # (pmap # pasInt # xs)
      in psingleton # pdataImpl result
 
+-- | Validates a transaction based on a predefined logic involving a sum less than a threshold value.
 spend :: Term s PStakingCredential -> Term s PValidator
 spend stakeCred =
   plam $ \x y ctx -> unTermCont $ do
@@ -54,6 +60,7 @@ spend stakeCred =
         (popaque $ pconstant ())
         perror
 
+-- | Merkelized withdrawal function that validates state transitions based on sum of squares calculation.
 withdraw :: Term s PStakeValidator
 withdraw = MerkelizedValidator.withdraw psumOfSquares
 
@@ -93,6 +100,7 @@ withdrawCtx =
       [ withdrawal rewardingCred 1
       ]
 
+-- | Tests the 'spend' function for both successful and failed validation scenarios.
 spendUnitTest :: TestTree
 spendUnitTest = tryFromPTerm "Merkelized Validator Spend Unit Test" (spend stakeCred) $ do
   testEvalCase
@@ -103,13 +111,14 @@ spendUnitTest = tryFromPTerm "Merkelized Validator Spend Unit Test" (spend stake
     , PlutusTx.toData spendCtx
     ]
   testEvalCase
-    "Fail - Spend"
+    "Fail - Spend incorrect datum and redeemer"
     Failure
     [ PlutusTx.toData (3 :: Integer)
     , PlutusTx.toData (4 :: Integer)
     , PlutusTx.toData spendCtx
     ]
 
+-- | Tests the 'withdraw' function to ensure correct state transition validations.
 withdrawUnitTest :: TestTree
 withdrawUnitTest = tryFromPTerm "Merkelized Validator Withdraw Unit Test" withdraw $ do
   testEvalCase

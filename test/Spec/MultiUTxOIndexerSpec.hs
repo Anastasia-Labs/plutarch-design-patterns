@@ -1,3 +1,7 @@
+{- |
+Module      : Spec.MultiUTxOIndexerSpec
+Description : Test suite for MultiUTxO Indexer validation in a Plutarch-based smart contract setting.
+-}
 module Spec.MultiUTxOIndexerSpec (
   validator,
   unitTest,
@@ -42,6 +46,7 @@ spend = StakeValidator.spend
 withdraw :: Term s PStakeValidator
 withdraw = MultiUTxOIndexer.withdraw Utils.inputOutputValidator
 
+-- | A combined validator that integrates both staking and spending validation logic.
 validator :: Term s PValidator
 validator = Multivalidator.multivalidator withdraw spend
 
@@ -72,6 +77,7 @@ outputUTXO =
     , withValue (singleton "" "" 4_000_000)
     ]
 
+-- | A script context for spend transactions, incorporating UTxO details and withdrawal credentials.
 spendCtx :: ScriptContext
 spendCtx =
   buildSpending' $
@@ -99,6 +105,7 @@ badRedeemer =
         }
     ]
 
+-- | A script context for withdraw transactions, using input and output UTxOs.
 withdrawCtx :: ScriptContext
 withdrawCtx =
   buildRewarding' $
@@ -108,6 +115,7 @@ withdrawCtx =
       , withRewarding rewardingCred
       ]
 
+-- | Unit tests evaluating the correct operation of the validator under various scenarios.
 unitTest :: TestTree
 unitTest = tryFromPTerm "Multi UTxI Indexer Unit Test" validator $ do
   testEvalCase

@@ -1,3 +1,7 @@
+{- |
+Module      : Spec.SingularUTxOIndexerOneToManySpec
+Description : Test suite for Singular UTxO Indexer in a one-to-many configuration using Plutarch.
+-}
 module Spec.SingularUTxOIndexerOneToManySpec (
   spend,
   unitTest,
@@ -32,6 +36,7 @@ import PlutusTx.Builtins (mkI)
 import Spec.Utils qualified as Utils
 import Test.Tasty (TestTree)
 
+-- | A validator that enforces one-to-many UTxO indexing rules for spend transactions.
 spend :: Term s PValidator
 spend = SingularUTxOIndexerOneToMany.spend Utils.inputValidator Utils.inputOutputValidator Utils.collectiveOutputValidator
 
@@ -76,6 +81,7 @@ badRedeemer =
     , outIxs = [mkI 1]
     }
 
+-- | Script context for spending tests, incorporating input and output UTxOs, and other contextual information.
 spendCtx :: ScriptContext
 spendCtx =
   buildSpending' $
@@ -86,6 +92,7 @@ spendCtx =
       , withdrawal rewardingCred 1
       ]
 
+-- | Unit tests that validate the correct operation and rejection scenarios of the spend validator.
 unitTest :: TestTree
 unitTest = tryFromPTerm "Singular UTxO Indexer One To Many Unit Test" spend $ do
   testEvalCase
