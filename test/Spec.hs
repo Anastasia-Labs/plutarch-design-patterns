@@ -13,13 +13,15 @@ main :: IO ()
 main = do
   defaultMain $
     testGroup
-      "Unit Test Group"
+      "Tests"
       [ Spec.MerkelizedValidatorSpec.spendUnitTest
       , Spec.MerkelizedValidatorSpec.withdrawUnitTest
+      , Spec.MerkelizedValidatorSpec.propertyTests
       , Spec.StakeValidatorSpec.unitTest
       , Spec.TxLevelMinterSpec.unitTest
       , Spec.SingularUTxOIndexerSpec.unitTest
       , Spec.SingularUTxOIndexerOneToManySpec.unitTest
       , Spec.MultiUTxOIndexerSpec.unitTest
+      , Spec.MultiUTxOIndexerSpec.propertyTests
       , Spec.MultiUTxOIndexerOneToManySpec.unitTest
       ]
