@@ -33,7 +33,6 @@ import PlutusLedgerApi.V2 (
   BuiltinByteString,
   Credential (..),
   ScriptContext,
-  ScriptHash (..),
   ScriptPurpose (..),
   StakingCredential (..),
  )
@@ -171,7 +170,7 @@ prop_withdrawValidator = forAll withdrawInput check
                   #$ pdcons @"outputState"
                   # pdata outputState
                   # pdnil
-          cred = StakingHash (ScriptCredential (ScriptHash bs))
+          cred = mkStakingHashFromByteString bs
           context :: ClosedTerm PScriptContext
           context = pconstant (withdrawCtxWithCred cred)
        in fromPPartial $ withdraw # pforgetData (pdata redeemer) # context
@@ -185,7 +184,7 @@ prop_spendValidator = forAll spendInput check
       bs <- genByteString 56
       return (x, y, bs)
     check (x :: Integer, y :: Integer, bs :: BuiltinByteString) =
-      let cred = StakingHash (ScriptCredential (ScriptHash bs))
+      let cred = mkStakingHashFromByteString bs
           redeemer =
             MerkelizedValidator.WithdrawRedeemer
               { inputState = [PlutusTx.toBuiltinData x, PlutusTx.toBuiltinData y]

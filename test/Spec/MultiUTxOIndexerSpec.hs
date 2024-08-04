@@ -163,7 +163,7 @@ unitTest = tryFromPTerm "Multi UTxI Indexer Unit Test" validator $ do
 mkInputUTxO :: BuiltinByteString -> BuiltinByteString -> UTXO
 mkInputUTxO txId valHash =
   mconcat
-    [ address (Address (ScriptCredential (ScriptHash valHash)) Nothing)
+    [ address (mkAddressFromByteString valHash)
     , withRefTxId (TxId txId)
     , withRefIndex 0
     ]

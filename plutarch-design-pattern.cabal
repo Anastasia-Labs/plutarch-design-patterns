@@ -100,7 +100,6 @@ common test-dependencies
     , hedgehog
     , hedgehog-quickcheck
     , liqwid-plutarch-extra
-    , optics
     , plutarch
     , plutarch-context-builder
     , plutarch-extra
