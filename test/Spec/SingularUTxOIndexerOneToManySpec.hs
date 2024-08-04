@@ -5,17 +5,21 @@ Description : Test suite for Singular UTxO Indexer in a one-to-many configuratio
 module Spec.SingularUTxOIndexerOneToManySpec (
   spend,
   unitTest,
+  propertyTest,
 ) where
 
-import Plutarch.Api.V2 (PValidator)
+import Plutarch.Api.V2 (PScriptContext, PValidator)
+import Plutarch.Builtin (pforgetData)
 import Plutarch.Context (
   UTXO,
   address,
   buildSpending',
   input,
   output,
+  withRef,
   withRefIndex,
   withRefTxId,
+  withSpendingOutRef,
   withSpendingOutRefId,
   withValue,
   withdrawal,
@@ -23,18 +27,26 @@ import Plutarch.Context (
 import Plutarch.Prelude
 import Plutarch.SingularUTxOIndexerOneToMany qualified as SingularUTxOIndexerOneToMany
 import Plutarch.Test.Precompiled (Expectation (Failure, Success), testEvalCase, tryFromPTerm)
+import Plutarch.Test.QuickCheck (fromPPartial)
 import PlutusLedgerApi.V2 (
   Address (..),
+  BuiltinByteString,
   Credential (..),
+  CurrencySymbol (..),
   ScriptContext,
   ScriptHash,
   StakingCredential (..),
+  TokenName (..),
+  TxId (..),
+  TxOutRef (..),
   singleton,
  )
 import PlutusTx qualified
 import PlutusTx.Builtins (mkI)
+import Spec.Utils (genByteString, mkAddressFromByteString)
 import Spec.Utils qualified as Utils
-import Test.Tasty (TestTree)
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.QuickCheck (Property, chooseInt, forAll, testProperty)
 
 -- | A validator that enforces one-to-many UTxO indexing rules for spend transactions.
 spend :: Term s PValidator
@@ -109,3 +121,54 @@ unitTest = tryFromPTerm "Singular UTxO Indexer One To Many Unit Test" spend $ do
     , PlutusTx.toData badRedeemer
     , PlutusTx.toData spendCtx
     ]
+
+mkInputUTXO :: TxOutRef -> BuiltinByteString -> CurrencySymbol -> TokenName -> UTXO
+mkInputUTXO outRef valHash stateTokenSymbol tokenName =
+  mconcat
+    [ address (mkAddressFromByteString valHash)
+    , withValue ((singleton "" "" 2_000_000) <> (singleton stateTokenSymbol tokenName 1))
+    , withRef outRef
+    ]
+
+mkOutputUTXO :: BuiltinByteString -> CurrencySymbol -> TokenName -> UTXO
+mkOutputUTXO valHash stateTokenSymbol tokenName =
+  mconcat
+    [ address (mkAddressFromByteString valHash)
+    , withValue ((singleton "" "" 2_000_000) <> (singleton stateTokenSymbol tokenName 1))
+    ]
+
+mkSpendCtx :: BuiltinByteString -> BuiltinByteString -> BuiltinByteString -> BuiltinByteString -> ScriptContext
+mkSpendCtx txId valHash stateTokenSymbol tokenName =
+  let txOutRef = TxOutRef (TxId txId) 0
+      cs = CurrencySymbol stateTokenSymbol
+      tn = TokenName tokenName
+   in buildSpending' $
+        mconcat
+          [ input (mkInputUTXO txOutRef valHash cs tn)
+          , output (mkOutputUTXO valHash cs tn)
+          , withSpendingOutRef txOutRef
+          , withdrawal rewardingCred 1
+          ]
+
+prop_spendValidator :: Property
+prop_spendValidator = forAll spendInput check
+  where
+    spendInput = do
+      stateTokenSymbol <- genByteString 56
+      txId <- genByteString 64
+      valHash <- genByteString 56
+      tokenNameLength <- chooseInt (0, 32)
+      tokenName <- genByteString tokenNameLength
+      return (stateTokenSymbol, txId, valHash, tokenName)
+    check (stateTokenSymbol, txId, valHash, tokenName) =
+      let context :: ClosedTerm PScriptContext
+          context = pconstant $ mkSpendCtx txId valHash stateTokenSymbol tokenName
+          redeemer :: ClosedTerm SingularUTxOIndexerOneToMany.PSpendRedeemer
+          redeemer = pconstant $ SingularUTxOIndexerOneToMany.SpendRedeemer (mkI 0) [mkI 0]
+       in fromPPartial $ spend # (pforgetData . pdata . pconstant) (0 :: Integer) # (pforgetData . pdata) redeemer # context
+
+propertyTest :: TestTree
+propertyTest =
+  testGroup
+    "Property tests for SingularUTxOIndexerOneToMany"
+    [testProperty "spend" prop_spendValidator]

@@ -5,9 +5,10 @@ Description : Test suite for validating UTxO indexation in a multi-validator set
 module Spec.MultiUTxOIndexerOneToManySpec (
   validator,
   unitTest,
+  propertyTest,
 ) where
 
-import Plutarch.Api.V2 (PStakeValidator, PValidator)
+import Plutarch.Api.V2 (PScriptContext, PStakeValidator, PValidator)
 import Plutarch.Context (
   UTXO,
   address,
@@ -15,30 +16,46 @@ import Plutarch.Context (
   buildSpending',
   input,
   output,
+  withRef,
   withRefIndex,
   withRefTxId,
   withRewarding,
+  withSpendingOutRef,
   withSpendingOutRefId,
   withValue,
   withdrawal,
  )
-import Plutarch.MultiUTxOIndexerOneToMany qualified as MultiUTxOIndexerOneToMany
-import Plutarch.Multivalidator qualified as Multivalidator
-import Plutarch.Prelude
-import Plutarch.StakeValidator qualified as StakeValidator
-import Plutarch.Test.Precompiled (Expectation (Failure, Success), testEvalCase, tryFromPTerm)
+
 import PlutusLedgerApi.V2 (
   Address (..),
+  BuiltinByteString,
   Credential (..),
+  CurrencySymbol (..),
   ScriptContext,
   ScriptHash,
   StakingCredential (..),
+  TokenName (..),
+  TxId (..),
+  TxOutRef (..),
   singleton,
  )
 import PlutusTx qualified
 import PlutusTx.Builtins (mkI)
+
+import Plutarch.MultiUTxOIndexerOneToMany qualified as MultiUTxOIndexerOneToMany
+import Plutarch.Multivalidator qualified as Multivalidator
+
+import Plutarch.Builtin (pforgetData)
+import Plutarch.Prelude
+import Plutarch.StakeValidator qualified as StakeValidator
+import Plutarch.Test.Precompiled (Expectation (Failure, Success), testEvalCase, tryFromPTerm)
+
+import Plutarch.Test.QuickCheck (fromPPartial)
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.QuickCheck (Property, chooseInt, chooseInteger, forAll, testProperty)
+
+import Spec.Utils (genByteString, mkAddressFromByteString, mkStakingHashFromByteString)
 import Spec.Utils qualified as Utils
-import Test.Tasty (TestTree)
 
 -- | Handles the spend logic using the basic Stake Validator.
 spend :: Term s PValidator
@@ -145,4 +162,98 @@ unitTest = tryFromPTerm "Multi UTxO Indexer One To Many Unit Test" validator $ d
     Failure
     [ PlutusTx.toData badRedeemer
     , PlutusTx.toData withdrawCtx
+    ]
+
+mkInputUTXO :: TxOutRef -> BuiltinByteString -> UTXO
+mkInputUTXO outRef valHash =
+  mconcat
+    [ address (mkAddressFromByteString valHash)
+    , withValue (singleton "" "" 0)
+    , withRef outRef
+    ]
+
+mkSpendCtx :: BuiltinByteString -> BuiltinByteString -> Integer -> ScriptContext
+mkSpendCtx txId valHash withdrawalAmount =
+  let outRef = TxOutRef (TxId txId) 0
+   in buildSpending' $
+        mconcat
+          [ input (mkInputUTXO outRef valHash)
+          , withSpendingOutRef outRef
+          , withdrawal (mkStakingHashFromByteString valHash) withdrawalAmount
+          ]
+
+prop_spendValidator :: Property
+prop_spendValidator = forAll spendInput check
+  where
+    spendInput = do
+      txId <- genByteString 64
+      valHash <- genByteString 56
+      withdrawAmount <- chooseInteger (1, 1_000_000_000)
+      return (txId, valHash, withdrawAmount)
+    check (txId, valHash, withdrawAmount) =
+      let context :: ClosedTerm PScriptContext
+          context = pconstant (mkSpendCtx txId valHash withdrawAmount)
+          emptyByteString :: ClosedTerm PData
+          emptyByteString = (pforgetData . pdata . phexByteStr) ""
+       in fromPPartial $ spend # emptyByteString # emptyByteString # context
+
+mkInputs :: BuiltinByteString -> BuiltinByteString -> BuiltinByteString -> BuiltinByteString -> Integer -> [UTXO]
+mkInputs txId valHash stateTokenSymbol tokenName numPairs = mkInput <$> [0 .. (numPairs - 1)]
+  where
+    mkInput i =
+      mconcat
+        [ address (mkAddressFromByteString valHash)
+        , withValue ((singleton "" "" (i * 2_000_000)) <> (singleton (CurrencySymbol stateTokenSymbol) (TokenName tokenName) 1))
+        , withRefTxId (TxId txId)
+        , withRefIndex i
+        ]
+
+mkOutputs :: BuiltinByteString -> BuiltinByteString -> BuiltinByteString -> Integer -> [UTXO]
+mkOutputs valHash stateTokenSymbol tokenName numPairs = mkOutput <$> [0 .. (numPairs - 1)]
+  where
+    mkOutput i =
+      mconcat
+        [ address (mkAddressFromByteString valHash)
+        , withValue ((singleton "" "" (i * 2_000_000)) <> (singleton (CurrencySymbol stateTokenSymbol) (TokenName tokenName) 1))
+        ]
+
+mkRedeemer :: Integer -> MultiUTxOIndexerOneToMany.WithdrawRedeemer
+mkRedeemer n =
+  MultiUTxOIndexerOneToMany.WithdrawRedeemer $ (\i -> MultiUTxOIndexerOneToMany.Indices (mkI i) [(mkI i)]) <$> [0 .. (n - 1)]
+
+mkWithdrawCtx :: BuiltinByteString -> [UTXO] -> [UTXO] -> ScriptContext
+mkWithdrawCtx valHash inputUTxOs outputUTxOs =
+  buildRewarding' $
+    mconcat
+      [ mconcat $ input <$> inputUTxOs
+      , mconcat $ output <$> outputUTxOs
+      , withRewarding (mkStakingHashFromByteString valHash)
+      ]
+
+prop_withdrawValidator :: Property
+prop_withdrawValidator = forAll withdrawInput check
+  where
+    withdrawInput = do
+      stateTokenSymbol <- genByteString 56
+      txId <- genByteString 64
+      valHash <- genByteString 56
+      tokenNameLength <- chooseInt (0, 32)
+      tokenName <- genByteString tokenNameLength
+      numPairs <- chooseInteger (1, 10)
+      return (stateTokenSymbol, txId, valHash, tokenName, numPairs)
+    check (stateTokenSymbol, txId, valHash, tokenName, numPairs) =
+      let inputs = mkInputs txId valHash stateTokenSymbol tokenName numPairs
+          outputs = mkOutputs valHash stateTokenSymbol tokenName numPairs
+          redeemer :: ClosedTerm MultiUTxOIndexerOneToMany.PWithdrawRedeemer
+          redeemer = pconstant (mkRedeemer numPairs)
+          context :: ClosedTerm PScriptContext
+          context = pconstant (mkWithdrawCtx valHash inputs outputs)
+       in fromPPartial $ withdraw # pforgetData (pdata redeemer) # context
+
+propertyTest :: TestTree
+propertyTest =
+  testGroup
+    "Property tests for MultiUTxOIndexerOneToMany"
+    [ testProperty "spend" prop_spendValidator
+    , testProperty "withdraw" prop_withdrawValidator
     ]

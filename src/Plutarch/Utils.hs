@@ -44,7 +44,7 @@ deriving via (DerivePConstantViaData WrapperRedeemer PWrapperRedeemer) instance 
 ptryOwnInput :: (PIsListLike list PTxInInfo) => Term s (list PTxInInfo :--> PTxOutRef :--> PTxOut)
 ptryOwnInput =
   plam $ \inputs ownRef ->
-    precList (\self x xs -> pletFields @'["outRef", "resolved"] x $ \txInFields -> pif (ptrace "." (ownRef #== txInFields.outRef)) txInFields.resolved (self # xs)) (const perror) # inputs
+    precList (\self x xs -> pletFields @'["outRef", "resolved"] x $ \txInFields -> pif (ownRef #== txInFields.outRef) txInFields.resolved (self # xs)) (const perror) # inputs
 
 pheadSingleton :: (PListLike list, PElemConstraint list a) => Term s (list a :--> a)
 pheadSingleton = phoistAcyclic $

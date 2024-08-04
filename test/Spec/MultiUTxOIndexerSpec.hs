@@ -3,7 +3,7 @@ Module      : Spec.MultiUTxOIndexerSpec
 Description : Test suite for MultiUTxO Indexer validation in a Plutarch-based smart contract setting.
 -}
 module Spec.MultiUTxOIndexerSpec (
-  propertyTests,
+  propertyTest,
   unitTest,
   validator,
 ) where
@@ -16,17 +16,18 @@ import Plutarch.Context (
   buildSpending',
   input,
   output,
-  withdrawal,
   withRefIndex,
   withRefTxId,
   withRewarding,
-  withSpendingUTXO,
   withSpendingOutRefId,
+  withSpendingUTXO,
   withValue,
+  withdrawal,
  )
 
-import Plutarch.Prelude
 import Plutarch.Api.V2.Contexts (PScriptContext)
+import Plutarch.Builtin (pforgetData)
+import Plutarch.Prelude
 import Plutarch.StakeValidator qualified as StakeValidator
 import Plutarch.Test.Precompiled (Expectation (Failure, Success), testEvalCase, tryFromPTerm)
 import PlutusLedgerApi.V2 (
@@ -37,11 +38,10 @@ import PlutusLedgerApi.V2 (
   ScriptContext,
   ScriptHash (..),
   StakingCredential (..),
-  singleton,
   TokenName (..),
   TxId (..),
+  singleton,
  )
-import Plutarch.Builtin (pforgetData)
 import PlutusTx qualified
 import PlutusTx.Builtins (mkI)
 
@@ -50,9 +50,10 @@ import Plutarch.Multivalidator qualified as Multivalidator
 
 import Plutarch.Test.QuickCheck (fromPPartial)
 import Test.Tasty (TestTree, testGroup)
-import Test.Tasty.QuickCheck (Property, chooseInteger, forAll, testProperty, chooseInt)
+import Test.Tasty.QuickCheck (Property, chooseInt, chooseInteger, forAll, testProperty)
+
+import Spec.Utils (genByteString, mkAddressFromByteString, mkStakingHashFromByteString)
 import Spec.Utils qualified as Utils
-import Spec.Utils (genByteString, mkAddressFromByteString)
 
 spend :: Term s PValidator
 spend = StakeValidator.spend
@@ -169,83 +170,86 @@ mkInputUTxO txId valHash =
 
 mkSpendCtx :: BuiltinByteString -> BuiltinByteString -> Integer -> ScriptContext
 mkSpendCtx txId valHash withdrawAmount =
-  let spendingUTxO = mkInputUTxO txId valHash in
-  buildSpending' $
-    mconcat
-      [ input spendingUTxO
-      , withSpendingUTXO spendingUTxO
-      , withdrawal (StakingHash (ScriptCredential (ScriptHash valHash))) withdrawAmount
-      ]
+  let spendingUTxO = mkInputUTxO txId valHash
+   in buildSpending' $
+        mconcat
+          [ input spendingUTxO
+          , withSpendingUTXO spendingUTxO
+          , withdrawal (mkStakingHashFromByteString valHash) withdrawAmount
+          ]
 
 prop_spendValidator :: Property
 prop_spendValidator = forAll spendInput check
- where
-  spendInput = do
-    txId            <- genByteString 64
-    valHash         <- genByteString 56
-    withdrawAmount  <- chooseInteger (1, 1_000_000_000)
-    return (txId, valHash, withdrawAmount)
-  check (txId, valHash, withdrawAmount) =
-    let context :: ClosedTerm PScriptContext
-        context = pconstant (mkSpendCtx txId valHash withdrawAmount) in
-    let emptyByteString :: ClosedTerm PData
-        emptyByteString = (pforgetData . pdata . phexByteStr) ""     in
-    fromPPartial $ spend # emptyByteString # emptyByteString # context
+  where
+    spendInput = do
+      txId <- genByteString 64
+      valHash <- genByteString 56
+      withdrawAmount <- chooseInteger (1, 1_000_000_000)
+      return (txId, valHash, withdrawAmount)
+    check (txId, valHash, withdrawAmount) =
+      let context :: ClosedTerm PScriptContext
+          context = pconstant (mkSpendCtx txId valHash withdrawAmount)
+          emptyByteString :: ClosedTerm PData
+          emptyByteString = (pforgetData . pdata . phexByteStr) ""
+       in fromPPartial $ spend # emptyByteString # emptyByteString # context
 
 mkInputs :: BuiltinByteString -> BuiltinByteString -> BuiltinByteString -> BuiltinByteString -> Integer -> [UTXO]
-mkInputs txId valHash stateTokenSymbol tokenName numPairs = mkInput <$> [0..(numPairs - 1)]
- where
-  mkInput i =
-    mconcat
-      [ address (mkAddressFromByteString valHash)
-      , withValue ((singleton "" ""  (i * 2_000_000)) <> (singleton (CurrencySymbol stateTokenSymbol) (TokenName tokenName) 1))
-      , withRefTxId (TxId txId)
-      , withRefIndex i
-      ]
+mkInputs txId valHash stateTokenSymbol tokenName numPairs = mkInput <$> [0 .. (numPairs - 1)]
+  where
+    mkInput i =
+      mconcat
+        [ address (mkAddressFromByteString valHash)
+        , withValue ((singleton "" "" (i * 2_000_000)) <> (singleton (CurrencySymbol stateTokenSymbol) (TokenName tokenName) 1))
+        , withRefTxId (TxId txId)
+        , withRefIndex i
+        ]
 
 mkOutputs :: BuiltinByteString -> BuiltinByteString -> BuiltinByteString -> Integer -> [UTXO]
-mkOutputs valHash stateTokenSymbol tokenName numPairs = mkOutput <$> [0..(numPairs - 1)]
- where
-  mkOutput i =
-    mconcat
-      [ address (mkAddressFromByteString valHash)
-      , withValue ((singleton "" ""  (i * 2_000_000)) <> (singleton (CurrencySymbol stateTokenSymbol) (TokenName tokenName) 1))
-      ]
+mkOutputs valHash stateTokenSymbol tokenName numPairs = mkOutput <$> [0 .. (numPairs - 1)]
+  where
+    mkOutput i =
+      mconcat
+        [ address (mkAddressFromByteString valHash)
+        , withValue ((singleton "" "" (i * 2_000_000)) <> (singleton (CurrencySymbol stateTokenSymbol) (TokenName tokenName) 1))
+        ]
 
 mkRedeemer :: Integer -> MultiUTxOIndexer.WithdrawRedeemer
 mkRedeemer n =
-  MultiUTxOIndexer.WithdrawRedeemer $ (\i-> MultiUTxOIndexer.Indices (mkI i) (mkI i)) <$> [0..(n - 1)]
+  MultiUTxOIndexer.WithdrawRedeemer $ (\i -> MultiUTxOIndexer.Indices (mkI i) (mkI i)) <$> [0 .. (n - 1)]
 
 mkWithdrawCtx :: BuiltinByteString -> [UTXO] -> [UTXO] -> ScriptContext
 mkWithdrawCtx valHash inputUTxOs outputUTxOs =
   buildRewarding' $
     mconcat
-      [ mconcat $ input  <$> inputUTxOs
+      [ mconcat $ input <$> inputUTxOs
       , mconcat $ output <$> outputUTxOs
-      , withRewarding (StakingHash (ScriptCredential (ScriptHash valHash)))
+      , withRewarding (mkStakingHashFromByteString valHash)
       ]
 
 prop_withdrawValidator :: Property
 prop_withdrawValidator = forAll withdrawInput check
- where
-  withdrawInput = do
-    stateTokenSymbol <- genByteString 56
-    txId             <- genByteString 64
-    valHash          <- genByteString 56
-    tokenNameLength  <- chooseInt (0, 32)
-    tokenName        <- genByteString tokenNameLength
-    numPairs         <- chooseInteger (1, 10)
-    return (stateTokenSymbol, txId, valHash, tokenName, numPairs)
-  check (stateTokenSymbol, txId, valHash, tokenName, numPairs) =
-    let inputs  = mkInputs  txId valHash stateTokenSymbol tokenName numPairs in
-    let outputs = mkOutputs      valHash stateTokenSymbol tokenName numPairs in
-    let redeemer :: ClosedTerm MultiUTxOIndexer.PWithdrawRedeemer
-        redeemer = pconstant (mkRedeemer numPairs)                           in
-    let context :: ClosedTerm PScriptContext
-        context = pconstant (mkWithdrawCtx valHash inputs outputs)           in
-    fromPPartial $ withdraw # pforgetData (pdata redeemer) # context
+  where
+    withdrawInput = do
+      stateTokenSymbol <- genByteString 56
+      txId <- genByteString 64
+      valHash <- genByteString 56
+      tokenNameLength <- chooseInt (0, 32)
+      tokenName <- genByteString tokenNameLength
+      numPairs <- chooseInteger (1, 10)
+      return (stateTokenSymbol, txId, valHash, tokenName, numPairs)
+    check (stateTokenSymbol, txId, valHash, tokenName, numPairs) =
+      let inputs = mkInputs txId valHash stateTokenSymbol tokenName numPairs
+          outputs = mkOutputs valHash stateTokenSymbol tokenName numPairs
+          redeemer :: ClosedTerm MultiUTxOIndexer.PWithdrawRedeemer
+          redeemer = pconstant (mkRedeemer numPairs)
+          context :: ClosedTerm PScriptContext
+          context = pconstant (mkWithdrawCtx valHash inputs outputs)
+       in fromPPartial $ withdraw # pforgetData (pdata redeemer) # context
 
-propertyTests :: TestTree
-propertyTests = testGroup "Property tests for MultiUTxOIndexer" [ testProperty "spend"     prop_spendValidator
-                                                                , testProperty "withdraw"  prop_withdrawValidator
-                                                                ]
+propertyTest :: TestTree
+propertyTest =
+  testGroup
+    "Property tests for MultiUTxOIndexer"
+    [ testProperty "spend" prop_spendValidator
+    , testProperty "withdraw" prop_withdrawValidator
+    ]

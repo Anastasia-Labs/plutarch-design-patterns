@@ -4,14 +4,15 @@ module Spec.Utils (
   collectiveOutputValidator,
   genByteString,
   mkAddressFromByteString,
+  mkStakingHashFromByteString,
 ) where
 
 import Plutarch.Api.V2 (PTxInInfo, PTxOut)
 import Plutarch.Prelude
-import PlutusLedgerApi.V2 (BuiltinByteString, Address (..), Credential (..), ScriptHash (..))
+import PlutusLedgerApi.V2 (Address (..), BuiltinByteString, Credential (..), ScriptHash (..), StakingCredential (..))
 import PlutusTx.Builtins.Class (stringToBuiltinByteString)
 
-import Test.Tasty.QuickCheck (Gen, vectorOf, elements)
+import Test.Tasty.QuickCheck (Gen, elements, vectorOf)
 
 inputValidator :: Term s (PTxInInfo :--> PBool)
 inputValidator = phoistAcyclic $
@@ -35,3 +36,6 @@ genByteString n = do
 
 mkAddressFromByteString :: BuiltinByteString -> Address
 mkAddressFromByteString = (flip Address) Nothing . ScriptCredential . ScriptHash
+
+mkStakingHashFromByteString :: BuiltinByteString -> StakingCredential
+mkStakingHashFromByteString = StakingHash . ScriptCredential . ScriptHash

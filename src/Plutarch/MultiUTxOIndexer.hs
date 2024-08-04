@@ -60,7 +60,6 @@ newtype PIndices (s :: S)
 instance DerivePlutusType PIndices where type DPTStrat _ = PlutusTypeData
 deriving anyclass instance
   PTryFrom PData (PAsData PIndices)
-
 instance PUnsafeLiftDecl PIndices where
   type PLifted PIndices = Indices
 

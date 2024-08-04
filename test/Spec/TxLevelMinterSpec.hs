@@ -5,10 +5,12 @@ Description : Test suite for a transaction-level minter validator in a Plutarch 
 module Spec.TxLevelMinterSpec (
   validator,
   unitTest,
+  propertyTest,
 ) where
 
-import Plutarch.Api.V2 (PCurrencySymbol, PMintingPolicy, PValidator)
+import Plutarch.Api.V2 (PCurrencySymbol, PMintingPolicy, PScriptContext, PValidator)
 import Plutarch.Api.V2.Contexts (PTxInfo)
+import Plutarch.Builtin (pforgetData)
 import Plutarch.Context (
   UTXO,
   address,
@@ -16,8 +18,10 @@ import Plutarch.Context (
   buildSpending',
   input,
   mint,
+  withRef,
   withRefIndex,
   withRefTxId,
+  withSpendingOutRef,
   withSpendingOutRefId,
   withValue,
   withdrawal,
@@ -25,19 +29,26 @@ import Plutarch.Context (
 import Plutarch.Multivalidator qualified as Multivalidator
 import Plutarch.Prelude
 import Plutarch.Test.Precompiled (Expectation (Failure, Success), testEvalCase, tryFromPTerm)
+import Plutarch.Test.QuickCheck (fromPPartial)
 import Plutarch.TxLevelMinter qualified as TxLevelMinter
 import Plutarch.Utils (WrapperRedeemer (..))
 import PlutusLedgerApi.V2 (
   Address (..),
+  BuiltinByteString,
   Credential (..),
+  CurrencySymbol (..),
   ScriptContext,
   ScriptHash,
   StakingCredential (..),
+  TxId (..),
+  TxOutRef (..),
   Value,
   singleton,
  )
 import PlutusTx qualified
-import Test.Tasty (TestTree)
+import Spec.Utils (genByteString, mkAddressFromByteString)
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.QuickCheck (Property, chooseInteger, forAll, testProperty)
 
 -- | Implements the spending logic, including validation of the custom token 'BEACON'.
 spend :: Term s PValidator
@@ -124,3 +135,41 @@ unitTest = tryFromPTerm "Tx Level Minter Unit Test" validator $ do
     [ PlutusTx.toData ()
     , PlutusTx.toData mintCtx
     ]
+
+mkInputUTxO :: TxOutRef -> BuiltinByteString -> UTXO
+mkInputUTxO txOutRef valHash =
+  mconcat
+    [ address (mkAddressFromByteString valHash)
+    , withRef txOutRef
+    ]
+
+mkSpendCtx :: BuiltinByteString -> BuiltinByteString -> Integer -> ScriptContext
+mkSpendCtx txId valHash mintAmount =
+  let txOutRef = TxOutRef (TxId txId) 0
+   in buildSpending' $
+        mconcat
+          [ input (mkInputUTxO txOutRef valHash)
+          , withSpendingOutRef txOutRef
+          , mint (singleton (CurrencySymbol valHash) "BEACON" mintAmount)
+          ]
+
+prop_spendValidator :: Property
+prop_spendValidator = forAll spendInput check
+  where
+    spendInput = do
+      txId <- genByteString 64
+      valHash <- genByteString 56
+      mintAmount <- chooseInteger (1, 1_000_000_000)
+      return (txId, valHash, mintAmount)
+    check (txId, valHash, mintAmount) =
+      let context :: ClosedTerm PScriptContext
+          context = pconstant $ mkSpendCtx txId valHash mintAmount
+          emptyData :: ClosedTerm PData
+          emptyData = (pforgetData . pconstantData) (0 :: Integer)
+       in fromPPartial $ validator # emptyData # (pforgetData . pconstantData . WrapperRedeemer) 0 # context
+
+propertyTest :: TestTree
+propertyTest =
+  testGroup
+    "Property tests for TxLevelMinter"
+    [testProperty "spend" prop_spendValidator]
