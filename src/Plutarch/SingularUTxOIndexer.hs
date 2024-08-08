@@ -12,7 +12,11 @@ import Plutarch.Api.V2 (
   PValidator,
  )
 import Plutarch.Builtin (pasInt)
-import Plutarch.DataRepr (PDataFields)
+import Plutarch.DataRepr (
+  DerivePConstantViaData (DerivePConstantViaData),
+  PDataFields,
+ )
+import Plutarch.Lift (PConstantDecl, PUnsafeLiftDecl (PLifted))
 import Plutarch.Prelude
 import Plutarch.Unsafe (punsafeCoerce)
 import PlutusTx
@@ -38,6 +42,12 @@ newtype PSpendRedeemer (s :: S)
 
 instance DerivePlutusType PSpendRedeemer where type DPTStrat _ = PlutusTypeData
 instance PTryFrom PData PSpendRedeemer
+instance PUnsafeLiftDecl PSpendRedeemer where
+  type PLifted PSpendRedeemer = SpendRedeemer
+deriving via
+  (DerivePConstantViaData SpendRedeemer PSpendRedeemer)
+  instance
+    PConstantDecl SpendRedeemer
 
 spend :: Term s (PTxOut :--> PTxOut :--> PBool) -> Term s PValidator
 spend f =

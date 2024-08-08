@@ -5,19 +5,23 @@ Description : Test suite for the Stake Validator in a Plutarch smart contract en
 module Spec.StakeValidatorSpec (
   validator,
   unitTest,
+  propertyTest,
 ) where
 
-import Plutarch.Api.V2 (PStakeValidator, PStakingCredential, PValidator)
+import Plutarch.Api.V2 (PScriptContext, PStakeValidator, PStakingCredential, PValidator)
 import Plutarch.Api.V2.Contexts (PTxInfo)
+import Plutarch.Builtin (pforgetData)
 import Plutarch.Context (
   UTXO,
   address,
   buildRewarding',
   buildSpending',
   input,
+  withRef,
   withRefIndex,
   withRefTxId,
   withRewarding,
+  withSpendingOutRef,
   withSpendingOutRefId,
   withValue,
   withdrawal,
@@ -26,17 +30,23 @@ import Plutarch.Multivalidator qualified as Multivalidator
 import Plutarch.Prelude
 import Plutarch.StakeValidator qualified as StakeValidator
 import Plutarch.Test.Precompiled (Expectation (Failure, Success), testEvalCase, tryFromPTerm)
+import Plutarch.Test.QuickCheck (fromPPartial)
 import Plutarch.Utils (WrapperRedeemer (..))
 import PlutusLedgerApi.V2 (
   Address (..),
+  BuiltinByteString,
   Credential (..),
   ScriptContext,
   ScriptHash,
   StakingCredential (..),
+  TxId (..),
+  TxOutRef (..),
   singleton,
  )
 import PlutusTx qualified
-import Test.Tasty (TestTree)
+import Spec.Utils (genByteString, mkAddressFromByteString, mkStakingHashFromByteString)
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.QuickCheck (Property, chooseInteger, forAll, testProperty)
 
 -- | Implements the spending logic.
 spend :: Term s PValidator
@@ -136,3 +146,41 @@ unitTest = tryFromPTerm "Stake Validator Unit Test" validator $ do
     , PlutusTx.toData (WrapperRedeemer 0)
     , PlutusTx.toData spendIncorrectOutRefCtx
     ]
+
+mkInputUTxO :: TxOutRef -> BuiltinByteString -> UTXO
+mkInputUTxO txOutRef valHash =
+  mconcat
+    [ address (mkAddressFromByteString valHash)
+    , withRef txOutRef
+    ]
+
+mkSpendCtx :: BuiltinByteString -> BuiltinByteString -> Integer -> ScriptContext
+mkSpendCtx txId valHash withdrawAmount =
+  let txOutRef = TxOutRef (TxId txId) 0
+   in buildSpending' $
+        mconcat
+          [ input (mkInputUTxO txOutRef valHash)
+          , withSpendingOutRef txOutRef
+          , withdrawal (mkStakingHashFromByteString valHash) withdrawAmount
+          ]
+
+prop_spendValidator :: Property
+prop_spendValidator = forAll spendInput check
+  where
+    spendInput = do
+      txId <- genByteString 64
+      valHash <- genByteString 56
+      withdrawAmount <- chooseInteger (1, 1_000_000_000)
+      return (txId, valHash, withdrawAmount)
+    check (txId, valHash, withdrawAmount) =
+      let context :: ClosedTerm PScriptContext
+          context = pconstant $ mkSpendCtx txId valHash withdrawAmount
+          emptyData :: ClosedTerm PData
+          emptyData = (pforgetData . pconstantData) (0 :: Integer)
+       in fromPPartial $ spend # emptyData # emptyData # context
+
+propertyTest :: TestTree
+propertyTest =
+  testGroup
+    "Property tests for StakeValidator"
+    [testProperty "spend" prop_spendValidator]

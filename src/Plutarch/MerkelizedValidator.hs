@@ -71,8 +71,8 @@ withdraw f =
   plam $ \redeemer ctx -> unTermCont $ do
     let red = punsafeCoerce @_ @_ @PWithdrawRedeemer redeemer
     redF <- pletFieldsC @'["inputState", "outputState"] red
-    ctxF <- pletFieldsC @'["txInfo", "purpose"] ctx
-    PRewarding _ <- pmatchC ctxF.purpose
+    let purpose = pfield @"purpose" # ctx
+    PRewarding _ <- pmatchC purpose
     return $
       popaque $
         pif

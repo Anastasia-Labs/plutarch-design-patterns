@@ -1,8 +1,11 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 {- |
 Module      : Spec.MerkelizedValidatorSpec
 Description : Test suite for the Merkelized Validator functions in a Plutarch smart contract environment.
 -}
 module Spec.MerkelizedValidatorSpec (
+  propertyTest,
   psumOfSquares,
   spendUnitTest,
   withdrawUnitTest,
@@ -10,22 +13,24 @@ module Spec.MerkelizedValidatorSpec (
 ) where
 
 import Plutarch.Api.V2 (
+  PScriptContext,
   PStakeValidator,
   PStakingCredential (..),
   PValidator,
  )
-import Plutarch.Builtin (pasInt, pdataImpl)
+import Plutarch.Builtin (pasInt, pdataImpl, pforgetData)
 import Plutarch.Context (
   buildRewarding',
+  buildSpending',
   extraRedeemer,
   withdrawal,
  )
 import Plutarch.MerkelizedValidator qualified as MerkelizedValidator
 import Plutarch.Num ((#*), (#+))
 import Plutarch.Prelude
-import Plutarch.Test.Precompiled (Expectation (Failure, Success), testEvalCase, tryFromPTerm)
 import Plutarch.Utils (pheadSingleton)
 import PlutusLedgerApi.V2 (
+  BuiltinByteString,
   Credential (..),
   ScriptContext,
   ScriptPurpose (..),
@@ -33,11 +38,17 @@ import PlutusLedgerApi.V2 (
  )
 import PlutusTx qualified
 import PlutusTx.Builtins (mkI)
-import Test.Tasty (TestTree)
 import "liqwid-plutarch-extra" Plutarch.Extra.TermCont (
   pletC,
   pletFieldsC,
  )
+
+import Plutarch.Test.Precompiled (Expectation (Failure, Success), testEvalCase, tryFromPTerm)
+import Plutarch.Test.QuickCheck (fromPPartial)
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.QuickCheck (Property, chooseInteger, forAll, listOf, testProperty)
+
+import Spec.Utils
 
 -- | Calculates the sum of squares of integers provided as a list of 'PData'.
 psumOfSquares :: (PIsListLike list PData, PIsListLike list PInteger) => Term s (PBuiltinList PData :--> list PData)
@@ -68,8 +79,7 @@ rewardingCred :: StakingCredential
 rewardingCred = StakingHash (ScriptCredential "b055a795895b15d9af25acb752ac89c78524acfa387acb626c7e1bc8")
 
 stakeCred :: Term s PStakingCredential
-stakeCred =
-  pconstant rewardingCred
+stakeCred = pconstant rewardingCred
 
 withdrawRedeemer :: MerkelizedValidator.WithdrawRedeemer
 withdrawRedeemer =
@@ -86,18 +96,24 @@ badWithdrawRedeemer =
     }
 
 spendCtx :: ScriptContext
-spendCtx =
-  buildRewarding' $
+spendCtx = spendCtxWithCred rewardingCred withdrawRedeemer
+
+spendCtxWithCred :: StakingCredential -> MerkelizedValidator.WithdrawRedeemer -> ScriptContext
+spendCtxWithCred s redeemer =
+  buildSpending' $
     mconcat
-      [ withdrawal rewardingCred 1
-      , extraRedeemer (Rewarding rewardingCred) withdrawRedeemer
+      [ withdrawal s 1
+      , extraRedeemer (Rewarding s) redeemer
       ]
 
 withdrawCtx :: ScriptContext
-withdrawCtx =
+withdrawCtx = withdrawCtxWithCred rewardingCred
+
+withdrawCtxWithCred :: StakingCredential -> ScriptContext
+withdrawCtxWithCred s =
   buildRewarding' $
     mconcat
-      [ withdrawal rewardingCred 1
+      [ withdrawal s 0
       ]
 
 -- | Tests the 'spend' function for both successful and failed validation scenarios.
@@ -132,4 +148,57 @@ withdrawUnitTest = tryFromPTerm "Merkelized Validator Withdraw Unit Test" withdr
     Failure
     [ PlutusTx.toData badWithdrawRedeemer
     , PlutusTx.toData withdrawCtx
+    ]
+
+prop_withdrawValidator :: Property
+prop_withdrawValidator = forAll withdrawInput check
+  where
+    withdrawInput = do
+      xs <- listOf (chooseInteger (-1_000_000_000, 1_000_000_000))
+      bs <- genByteString 56
+      return (xs, bs)
+    check (xs, bs) =
+      let inputState :: ClosedTerm (PBuiltinList PData)
+          inputState = pmap # (plam $ pforgetData . pdata) # pconstant xs
+          outputState = psumOfSquares # inputState
+          redeemer :: ClosedTerm MerkelizedValidator.PWithdrawRedeemer
+          redeemer =
+            pcon $
+              MerkelizedValidator.PWithdrawRedeemer $
+                pdcons @"inputState"
+                  # pdata inputState
+                  #$ pdcons @"outputState"
+                  # pdata outputState
+                  # pdnil
+          cred = mkStakingHashFromByteString bs
+          context :: ClosedTerm PScriptContext
+          context = pconstant (withdrawCtxWithCred cred)
+       in fromPPartial $ withdraw # pforgetData (pdata redeemer) # context
+
+prop_spendValidator :: Property
+prop_spendValidator = forAll spendInput check
+  where
+    spendInput = do
+      x <- chooseInteger (-4, 4)
+      y <- chooseInteger (-4, 4)
+      bs <- genByteString 56
+      return (x, y, bs)
+    check (x :: Integer, y :: Integer, bs :: BuiltinByteString) =
+      let cred = mkStakingHashFromByteString bs
+          redeemer =
+            MerkelizedValidator.WithdrawRedeemer
+              { inputState = [PlutusTx.toBuiltinData x, PlutusTx.toBuiltinData y]
+              , outputState = [PlutusTx.toBuiltinData (x * x + y * y)]
+              }
+          context :: ClosedTerm PScriptContext
+          context = pconstant (spendCtxWithCred cred redeemer)
+          asData = pforgetData . pdata . pconstant
+       in fromPPartial $ spend (pconstant cred) # asData x # asData y # context
+
+propertyTest :: TestTree
+propertyTest =
+  testGroup
+    "Property tests for MerkelizedValidator"
+    [ testProperty "withdraw" prop_withdrawValidator
+    , testProperty "spend" prop_spendValidator
     ]

@@ -60,7 +60,6 @@ newtype PIndices (s :: S)
 instance DerivePlutusType PIndices where type DPTStrat _ = PlutusTypeData
 deriving anyclass instance
   PTryFrom PData (PAsData PIndices)
-
 instance PUnsafeLiftDecl PIndices where
   type PLifted PIndices = Indices
 
@@ -156,6 +155,7 @@ withdrawLogic inoutValidator =
           # pcon (PMyInOutAgg (-1) (-1) 0)
           # redF.indices
     PMyInOutAgg _ _ inputIndexCount <- pmatchC inoutAggregated
+
     pure $
       pif
         (scriptInputCount #== inputIndexCount)

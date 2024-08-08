@@ -64,10 +64,8 @@ newtype PIndices (s :: S)
 instance DerivePlutusType PIndices where type DPTStrat _ = PlutusTypeData
 deriving anyclass instance
   PTryFrom PData (PAsData PIndices)
-
 instance PUnsafeLiftDecl PIndices where
   type PLifted PIndices = Indices
-
 deriving via
   (DerivePConstantViaData Indices PIndices)
   instance
@@ -82,6 +80,12 @@ data PWithdrawRedeemer (s :: S)
 instance DerivePlutusType PWithdrawRedeemer where type DPTStrat _ = PlutusTypeData
 deriving anyclass instance
   PTryFrom PData (PAsData PWithdrawRedeemer)
+instance PUnsafeLiftDecl PWithdrawRedeemer where
+  type PLifted PWithdrawRedeemer = WithdrawRedeemer
+deriving via
+  (DerivePConstantViaData WithdrawRedeemer PWithdrawRedeemer)
+  instance
+    PConstantDecl WithdrawRedeemer
 
 data PMyInputAgg (s :: S) = PMyInputAgg (Term s (PBuiltinList PTxInInfo)) (Term s PInteger)
   deriving stock (Generic)
