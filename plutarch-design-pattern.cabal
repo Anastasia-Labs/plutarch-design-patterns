@@ -1,6 +1,6 @@
 cabal-version:      3.0
 name:               plutarch-design-pattern
-version:            0.1.0.0
+version:            0.2.0.0
 
 -- A short (one-line) description of the package.
 -- synopsis:
@@ -19,18 +19,17 @@ maintainer:         hadelive
 -- A copyright notice.
 -- copyright:
 -- category:
-extra-source-files: CHANGELOG.md
+extra-source-files: README.md
 
 common lang
   ghc-options:
-    -Werror -Wall -Wcompat -Wincomplete-uni-patterns
-    -Wno-unused-do-bind -Wno-partial-type-signatures
-    -Wmissing-export-lists -Wincomplete-record-updates
-    -Wmissing-deriving-strategies -Wno-name-shadowing -Wunused-foralls
-    -fprint-explicit-foralls -fprint-explicit-kinds -Wunused-do-bind
+    -Wall -Wcompat -Wincomplete-uni-patterns -Wno-unused-do-bind
+    -Wno-partial-type-signatures -Wmissing-export-lists
+    -Wincomplete-record-updates -Wmissing-deriving-strategies
+    -Wno-name-shadowing -Wunused-foralls -fprint-explicit-foralls
+    -fprint-explicit-kinds -Wunused-do-bind
 
   default-extensions:
-    NoStarIsType
     BangPatterns
     BinaryLiterals
     ConstrainedClassMethods
@@ -67,8 +66,11 @@ common lang
     MultiParamTypeClasses
     NamedFieldPuns
     NamedWildCards
+    NoFieldSelectors
+    NoStarIsType
     NumericUnderscores
     OverloadedLabels
+    OverloadedRecordDot
     OverloadedStrings
     PackageImports
     PartialTypeSignatures
@@ -88,8 +90,6 @@ common lang
     TypeSynonymInstances
     UndecidableInstances
     ViewPatterns
-    NoFieldSelectors
-    OverloadedRecordDot
 
   default-language:   GHC2021
 
@@ -97,19 +97,12 @@ common test-dependencies
   build-depends:
     , base
     , bytestring
-    , hedgehog
-    , hedgehog-quickcheck
-    , liqwid-plutarch-extra
     , plutarch
-    , plutarch-context-builder
-    , plutarch-extra
-    , plutarch-quickcheck
-    , plutarch-unit
-    , plutus-core
+    , plutarch-ledger-api
+    , plutarch-testlib
     , plutus-ledger-api
     , plutus-tx
     , tasty
-    , tasty-hedgehog
     , tasty-hunit
     , tasty-quickcheck
     , text
@@ -129,23 +122,12 @@ library
     Plutarch.ValidityRangeNormalization
 
   build-depends:
-    , aeson
-    , aeson-pretty
     , base
-    , base16-bytestring
-    , bytestring
-    , cardano-binary
-    , data-default
-    , liqwid-plutarch-extra
+    , generics-sop
     , plutarch
-    , plutarch-extra
-    , plutus-core
+    , plutarch-ledger-api
     , plutus-ledger-api
     , plutus-tx
-    , ply-core
-    , ply-plutarch
-    , prettyprinter
-    , serialise
     , text
 
   hs-source-dirs:  src

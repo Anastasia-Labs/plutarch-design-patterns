@@ -1,7 +1,4 @@
-{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE TypeFamilyDependencies #-}
-{-# LANGUAGE UndecidableInstances #-}
 
 module Plutarch.MerkelizedValidator (
   spend,
@@ -10,23 +7,20 @@ module Plutarch.MerkelizedValidator (
   PWithdrawRedeemer (..),
 ) where
 
-import Plutarch.Api.V1 qualified as V1
-import Plutarch.Api.V2 (PScriptPurpose (..), PStakeValidator, PStakingCredential (..))
-import Plutarch.DataRepr (
-  DerivePConstantViaData (DerivePConstantViaData),
-  PDataFields,
+import GHC.Generics (Generic)
+import Generics.SOP qualified as SOP
+import Plutarch.LedgerApi.AssocMap qualified as AssocMap
+import Plutarch.LedgerApi.V3 (
+  PCredential,
+  PRedeemer (..),
+  PScriptContext (..),
+  PScriptInfo (..),
+  PScriptPurpose (..),
  )
-import Plutarch.Extra.Record (mkRecordConstr, (.=))
-import Plutarch.Lift (PConstantDecl, PUnsafeLiftDecl (PLifted))
+import Plutarch.Monadic qualified as P
 import Plutarch.Prelude
-import Plutarch.Unsafe (punsafeCoerce)
-import PlutusTx
-import "liqwid-plutarch-extra" Plutarch.Extra.Map (ptryLookup)
-import "liqwid-plutarch-extra" Plutarch.Extra.TermCont (
-  pletC,
-  pletFieldsC,
-  pmatchC,
- )
+import PlutusTx (BuiltinData)
+import PlutusTx qualified
 
 data WithdrawRedeemer = WithdrawRedeemer
   { inputState :: [BuiltinData]
@@ -34,48 +28,75 @@ data WithdrawRedeemer = WithdrawRedeemer
   }
   deriving stock (Generic, Eq, Show)
 
-PlutusTx.makeIsDataIndexed
-  ''WithdrawRedeemer
-  [ ('WithdrawRedeemer, 0)
-  ]
+PlutusTx.makeIsDataIndexed ''WithdrawRedeemer [('WithdrawRedeemer, 0)]
 
-newtype PWithdrawRedeemer (s :: S)
-  = PWithdrawRedeemer (Term s (PDataRecord '["inputState" ':= PBuiltinList PData, "outputState" ':= PBuiltinList PData]))
+data PWithdrawRedeemer (s :: S) = PWithdrawRedeemer
+  { pwithdrawRedeemer'inputState ::
+      Term s (PAsData (PBuiltinList PData))
+  , pwithdrawRedeemer'outputState ::
+      Term s (PAsData (PBuiltinList PData))
+  }
   deriving stock (Generic)
-  deriving anyclass (PlutusType, PIsData, PDataFields, PShow)
+  deriving anyclass (SOP.Generic, PIsData, PShow)
+  deriving (PlutusType, PValidateData) via DeriveAsDataStruct PWithdrawRedeemer
 
-instance DerivePlutusType PWithdrawRedeemer where type DPTStrat _ = PlutusTypeData
-deriving anyclass instance PTryFrom PData PWithdrawRedeemer
-instance PUnsafeLiftDecl PWithdrawRedeemer where
-  type PLifted PWithdrawRedeemer = WithdrawRedeemer
 deriving via
-  (DerivePConstantViaData WithdrawRedeemer PWithdrawRedeemer)
+  DeriveDataPLiftable PWithdrawRedeemer WithdrawRedeemer
   instance
-    PConstantDecl WithdrawRedeemer
+    PLiftable PWithdrawRedeemer
 
-spend :: Term s PStakingCredential -> Term s (PBuiltinList PData) -> Term s (V1.PMap 'V1.Unsorted V1.PScriptPurpose V1.PRedeemer) -> Term s (PBuiltinList PData)
-spend stakCred inputState redeemers = unTermCont $ do
-  spending <- pletC $ mkRecordConstr PRewarding $ #_0 .= pdata stakCred
-  redeemer' <- pletC $ ptryLookup # spending # redeemers
-  V1.PRedeemer redeemer <- pmatchC redeemer'
-  let red = punsafeCoerce @_ @_ @PWithdrawRedeemer redeemer
-  redF <- pletFieldsC @'["inputState", "outputState"] red
-  return $
+spend ::
+  Term s PCredential ->
+  Term s (PBuiltinList PData) ->
+  Term s (AssocMap.PUnsortedMap PScriptPurpose PRedeemer) ->
+  Term s (PBuiltinList PData)
+spend stakCred inputState redeemers = P.do
+  PRedeemer redeemerData <- pmatch $ pfindRewardingRedeemer stakCred redeemers
+  PWithdrawRedeemer
+    { pwithdrawRedeemer'inputState
+    , pwithdrawRedeemer'outputState
+    } <-
+    pmatch $ pfromData $ pparseData @PWithdrawRedeemer redeemerData
+  pif
+    (inputState #== pfromData pwithdrawRedeemer'inputState)
+    (pfromData pwithdrawRedeemer'outputState)
+    perror
+
+withdraw ::
+  Term s (PBuiltinList PData :--> PBuiltinList PData) ->
+  Term s (PScriptContext :--> PUnit)
+withdraw f =
+  plam $ \ctx -> P.do
+    PScriptContext {pscriptContext'redeemer, pscriptContext'scriptInfo} <- pmatch ctx
+    PRewardingScript _ <- pmatch pscriptContext'scriptInfo
+    PRedeemer redeemer <- pmatch pscriptContext'redeemer
+    PWithdrawRedeemer
+      { pwithdrawRedeemer'inputState
+      , pwithdrawRedeemer'outputState
+      } <-
+      pmatch $ pfromData $ pparseData @PWithdrawRedeemer redeemer
     pif
-      (inputState #== redF.inputState)
-      (redF.outputState)
+      ( (f # pfromData pwithdrawRedeemer'inputState)
+          #== pfromData pwithdrawRedeemer'outputState
+      )
+      (pconstant ())
       perror
 
-withdraw :: Term s (PBuiltinList PData :--> PBuiltinList PData) -> Term s PStakeValidator
-withdraw f =
-  plam $ \redeemer ctx -> unTermCont $ do
-    let red = punsafeCoerce @_ @_ @PWithdrawRedeemer redeemer
-    redF <- pletFieldsC @'["inputState", "outputState"] red
-    let purpose = pfield @"purpose" # ctx
-    PRewarding _ <- pmatchC purpose
-    return $
-      popaque $
-        pif
-          ((f # redF.inputState) #== redF.outputState)
-          (pconstant ())
-          perror
+pfindRewardingRedeemer ::
+  Term s PCredential ->
+  Term s (AssocMap.PUnsortedMap PScriptPurpose PRedeemer) ->
+  Term s PRedeemer
+pfindRewardingRedeemer stakingCredential redeemers =
+  ( pfix $ \self -> plam $ \pairs ->
+      pelimList
+        ( \pair rest ->
+            pmatch pair $ \(PBuiltinPair purposeData redeemerData) ->
+              pif
+                (pfromData purposeData #== pcon (PRewarding stakingCredential))
+                (pfromData redeemerData)
+                (self # rest)
+        )
+        perror
+        pairs
+  )
+    # pto (pto redeemers)

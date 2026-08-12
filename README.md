@@ -32,24 +32,17 @@ sh <(curl -L https://nixos.org/nix/install) --daemon
 
 and follow the instructions.
 
-```sh
-$ nix --version
-nix (Nix) 2.18.1
-```
-
 Make sure to enable [Nix Flakes](https://nixos.wiki/wiki/Flakes#Enable_flakes) by editing either `~/.config/nix/nix.conf` or `/etc/nix/nix.conf` on your machine and add the following configuration entries:
 
 ```yaml
-experimental-features = nix-command flakes ca-derivations
+experimental-features = nix-command flakes
 allow-import-from-derivation = true
 ```
 
-Optionally, to improve build speed, it is possible to set up binary caches maintained by IOHK and Plutonomicon by setting additional configuration entries:
-
-```yaml
-substituters = https://cache.nixos.org https://iohk.cachix.org https://cache.iog.io
-trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= iohk.cachix.org-1:DpRUyj7h7V830dp/i6Nti+NEO2/nhblbov/8MW7Rqoo=
-```
+The flake declares optional binary caches in `nixConfig`. Pass
+`--accept-flake-config` when invoking Nix to use those settings. On a multi-user
+Nix installation, an administrator may still need to trust the substituters
+and public keys globally.
 
 To facilitate seamlessly moving between directories and associated Nix development shells we use [direnv](https://direnv.net) and [nix-direnv](https://github.com/nix-community/nix-direnv):
 
@@ -69,13 +62,13 @@ Once Nix is installed, you should be able to seamlessly use the repository to de
 Download the Git repository:
 
 ```sh
-git clone https://github.com/Anastasia-Labs/plutarch-linked-list.git
+git clone https://github.com/Anastasia-Labs/plutarch-design-patterns.git
 ```
 
 Navigate to the repository directory:
 
 ```sh
-cd plutarch-linked-list
+cd plutarch-design-patterns
 direnv allow
 ```
 
@@ -85,23 +78,35 @@ Activate the development environment with Nix:
 nix develop .
 ```
 
-Additionally, when you run `nix run .#help` you'll get a list of scripts you can run, the Github CI (nix flake check) is setup in a way where it checks the project builds successfully, haskell format is done correctly, and commit message follows conventional commits. Before pushing you should run `cabal run` , `nix run .#haskellFormat` (automatically formats all haskell files, including cabal), if you want to commit a correct format message you can run `cz commit`
+The development shell uses GHC 9.6.6 and includes Cabal, HLS, fourmolu,
+cabal-fmt, and the configured pre-commit hooks.
 
-Build:
+Build the library and test suite:
 
 ```sh
 cabal build all
 ```
 
-![plutarch-design-patterns.gif](/assets/images/plutarch-design-patterns.gif)
-
-Test:
+Run the tests:
 
 ```sh
 cabal test --test-show-details=direct
 ```
 
-![test_report.png](/assets/images/test_report.png)
+Evaluate and build the checks exported by the flake:
+
+```sh
+nix flake check --accept-flake-config
+```
+
+This includes the library and test checks as well as cabal-fmt and fourmolu
+formatting checks. To apply Haskell formatting locally or run every configured
+pre-commit hook directly:
+
+```sh
+make format
+pre-commit run --all-files
+```
 
 
 ## Provided Patterns
@@ -121,7 +126,7 @@ With a minimal spending logic (which is executed for each UTxO), and an arbitrar
 `withdraw` takes a custom logic that requires 3 arguments:
 
   1. Redeemer (arbitrary `PData`)
-  2. Script's validator hash (`PStakingCredential`)
+  2. Script's credential (`PCredential`)
   3. Transaction info (`PTxInfo`)
 
 ### UTxO Indexers
@@ -161,7 +166,7 @@ The primary difference is that here, input indices should be provided for the _f
 
 Very similar to the [stake validator](#stake-validator), this design pattern utilizes a multi-validator comprising of a spend and a minting endpoint.
 
-The role of the spendig input is to ensure the minting endpoint executes. It does so by looking at the mint field and making sure a non-zero amount of its asset (where its policy is the same as the multi-validator's hash, and its name is specified as a parameter) are getting minted/burnt.
+The role of the spending input is to ensure the minting endpoint executes. It does so by looking at the mint field and making sure a non-zero amount of its asset (where its policy is the same as the multi-validator's hash, and its name is specified as a parameter) is being minted or burned.
 
 The arbitrary logic is passed to the minting policy so that it can be executed a single time for a given transaction.
 
@@ -181,7 +186,7 @@ data NormalizedTimeRange
   | Always
 ```
 
-The exposed function of the module (`normalize_time_range`), takes a
+The exposed function of the module (`normalizeTimeRange`) takes a
 `ValidityRange` and returns this custom datatype.
 
 ### Merkelized Validator
@@ -196,19 +201,22 @@ This design pattern offers an interface for off-loading such logics into an exte
 > See [here](https://github.com/IntersectMBO/cardano-ledger/issues/3952) for
 > more info.
 
-The exposed `spend` function from `merkelized_validator` expects 3 arguments:
+The exposed `spend` function from `Plutarch.MerkelizedValidator` expects three arguments:
 
-1. The hash of the withdrawal validator that performs the computation.
+1. The credential of the withdrawal validator that performs the computation.
 2. The list of arguments expected by the underlying logic.
-3. The `Dict` of all redeemers within the current script context.
+3. The redeemer map from the current transaction information.
 
-This function expects to find the given stake validator in the `redeemers` list, such that its redeemer is of type `WithdrawRedeemer` (which carries the list of input arguments and the list of expected outputs), makes sure provided inputs match the ones given to the validator through its redeemer, and returns the
-outputs (which are carried inside the withdrawal redeemer) so that you can safely use them.
+This function expects to find a rewarding redeemer for the given credential in
+the map. It validates that the redeemer is a `WithdrawRedeemer`, checks that its
+input state matches the supplied arguments, and returns its output state for
+the spending validator to consume.
 
-For defining a withdrawal logic that carries out the computation, use the exposed `withdraw` function. It expects 3 arguments:
+For defining withdrawal logic that carries out the computation, use the
+exposed `withdraw` function. It takes a computation from a list of generic
+inputs to a list of generic outputs and returns a Plutus V3 validator of type
+`PScriptContext :--> PUnit`.
 
-1. The computation itself. It has to take a list of generic inputs, and return a list of generic outputs.
-2. A redeemer of type `WithdrawRedeemer<a, b>`. Note that `a` is the type of input arguments, and `b` is the type of output arguments.
-3. The script context.
-
-It validates that the puropse is withdrawal, and that given the list of inputs, the provided function yields identical outputs as the ones provided via the redeemer.
+The validator checks that the script is running for a rewarding purpose, reads
+and validates `WithdrawRedeemer` from the context, and verifies that applying
+the computation to `inputState` produces exactly `outputState`.

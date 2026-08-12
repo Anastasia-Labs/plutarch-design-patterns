@@ -1,7 +1,4 @@
-{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE TypeFamilyDependencies #-}
-{-# LANGUAGE UndecidableInstances #-}
 
 module Plutarch.ValidityRangeNormalization (
   NormalizedTimeRange (..),
@@ -9,11 +6,17 @@ module Plutarch.ValidityRangeNormalization (
   normalizeTimeRange,
 ) where
 
-import Plutarch.Api.V1 (PPOSIXTimeRange)
+import GHC.Generics (Generic)
+import Generics.SOP qualified as SOP
+import Plutarch.LedgerApi.V3 (
+  PExtended (..),
+  PInterval (..),
+  PLowerBound (..),
+  PPosixTime (..),
+  PUpperBound (..),
+ )
 import Plutarch.Prelude
 import PlutusTx qualified
-
-import Plutarch.Api.V2 (PExtended (..), PPOSIXTime (..))
 
 data NormalizedTimeRange
   = ClosedRange Integer Integer
@@ -29,47 +32,42 @@ PlutusTx.makeIsDataIndexed
   , ('ToPosInf, 2)
   , ('Always, 3)
   ]
-PlutusTx.makeLift ''NormalizedTimeRange
 
 data PNormalizedTimeRange (s :: S)
-  = PClosedRange (Term s (PDataRecord '["lower" ':= PPOSIXTime, "upper" ':= PPOSIXTime]))
-  | PFromNegInf (Term s (PDataRecord '["upper" ':= PPOSIXTime]))
-  | PToPosInf (Term s (PDataRecord '["lower" ':= PPOSIXTime]))
-  | PAlways (Term s (PDataRecord '[]))
+  = PClosedRange (Term s (PAsData PInteger)) (Term s (PAsData PInteger))
+  | PFromNegInf (Term s (PAsData PInteger))
+  | PToPosInf (Term s (PAsData PInteger))
+  | PAlways
   deriving stock (Generic)
-  deriving anyclass (PlutusType, PIsData, PShow)
+  deriving anyclass (SOP.Generic, PIsData, PShow)
+  deriving (PlutusType, PValidateData) via DeriveAsDataStruct PNormalizedTimeRange
 
-instance DerivePlutusType PNormalizedTimeRange where type DPTStrat _ = PlutusTypeData
-instance PTryFrom PData PNormalizedTimeRange
+deriving via
+  DeriveDataPLiftable PNormalizedTimeRange NormalizedTimeRange
+  instance
+    PLiftable PNormalizedTimeRange
 
-normalizeTimeRange :: Term s (PPOSIXTimeRange :--> PNormalizedTimeRange)
-normalizeTimeRange = phoistAcyclic $ plam $ \timeRange ->
-  pmatch (pfield @"_0" # (pfield @"from" # timeRange)) $ \case
-    PFinite ((pfield @"_0" #) -> f) ->
-      pmatch (pfield @"_0" # (pfield @"to" # timeRange)) $ \case
-        PFinite ((pfield @"_0" #) -> t) ->
-          pcon $
-            PClosedRange $
-              pdcons @"lower"
-                # pdata f
-                #$ pdcons @"upper"
-                # pdata t
-                #$ pdnil
-        PPosInf _ ->
-          pcon $
-            PToPosInf $
-              pdcons @"lower"
-                # pdata f
-                #$ pdnil
-        _ -> perror
-    PNegInf _ ->
-      pmatch (pfield @"_0" # (pfield @"to" # timeRange)) $ \case
-        PFinite ((pfield @"_0" #) -> t) ->
-          pcon $
-            PFromNegInf $
-              pdcons @"upper"
-                # pdata t
-                #$ pdnil
-        PPosInf _ -> pcon $ PAlways pdnil
-        _ -> perror
-    _ -> perror
+normalizeTimeRange :: Term s (PInterval PPosixTime :--> PNormalizedTimeRange)
+normalizeTimeRange =
+  phoistAcyclic $
+    plam $ \timeRange ->
+      pmatch timeRange $ \PInterval {pinterval'from, pinterval'to} ->
+        pmatch pinterval'from $ \(PLowerBound lower _) ->
+          pmatch pinterval'to $ \(PUpperBound upper _) ->
+            pmatch lower $ \case
+              PFinite lowerData ->
+                pmatch (pfromData lowerData) $ \(PPosixTime lowerBound) ->
+                  pmatch upper $ \case
+                    PFinite upperData ->
+                      pmatch (pfromData upperData) $ \(PPosixTime upperBound) ->
+                        pcon $ PClosedRange (pdata lowerBound) (pdata upperBound)
+                    PPosInf -> pcon $ PToPosInf (pdata lowerBound)
+                    _ -> perror
+              PNegInf ->
+                pmatch upper $ \case
+                  PFinite upperData ->
+                    pmatch (pfromData upperData) $ \(PPosixTime upperBound) ->
+                      pcon $ PFromNegInf (pdata upperBound)
+                  PPosInf -> pcon PAlways
+                  _ -> perror
+              _ -> perror

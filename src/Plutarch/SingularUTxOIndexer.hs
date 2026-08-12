@@ -6,25 +6,19 @@ module Plutarch.SingularUTxOIndexer (
   PSpendRedeemer (..),
 ) where
 
-import Plutarch.Api.V2 (
-  PScriptPurpose (..),
+import GHC.Generics (Generic)
+import Generics.SOP qualified as SOP
+import Plutarch.LedgerApi.V3 (
+  PRedeemer (..),
+  PScriptContext (..),
+  PScriptInfo (..),
+  PTxInInfo (..),
+  PTxInfo (..),
   PTxOut,
-  PValidator,
  )
-import Plutarch.Builtin (pasInt)
-import Plutarch.DataRepr (
-  DerivePConstantViaData (DerivePConstantViaData),
-  PDataFields,
- )
-import Plutarch.Lift (PConstantDecl, PUnsafeLiftDecl (PLifted))
+import Plutarch.Monadic qualified as P
 import Plutarch.Prelude
-import Plutarch.Unsafe (punsafeCoerce)
-import PlutusTx
-import "liqwid-plutarch-extra" Plutarch.Extra.TermCont (
-  pletC,
-  pletFieldsC,
-  pmatchC,
- )
+import PlutusTx qualified
 
 data SpendRedeemer = SpendRedeemer
   { inIdx :: PlutusTx.BuiltinData
@@ -32,39 +26,53 @@ data SpendRedeemer = SpendRedeemer
   }
   deriving stock (Generic, Eq, Show)
 
-PlutusTx.makeLift ''SpendRedeemer
 PlutusTx.makeIsDataIndexed ''SpendRedeemer [('SpendRedeemer, 0)]
 
-newtype PSpendRedeemer (s :: S)
-  = PSpendRedeemer (Term s (PDataRecord '["inIdx" ':= PData, "outIdx" ':= PData]))
+data PSpendRedeemer (s :: S) = PSpendRedeemer
+  { pspendRedeemer'inIdx :: Term s (PAsData PData)
+  , pspendRedeemer'outIdx :: Term s (PAsData PData)
+  }
   deriving stock (Generic)
-  deriving anyclass (PlutusType, PIsData, PDataFields, PShow)
+  deriving anyclass (SOP.Generic, PIsData, PShow)
+  deriving (PlutusType, PValidateData) via DeriveAsDataStruct PSpendRedeemer
 
-instance DerivePlutusType PSpendRedeemer where type DPTStrat _ = PlutusTypeData
-instance PTryFrom PData PSpendRedeemer
-instance PUnsafeLiftDecl PSpendRedeemer where
-  type PLifted PSpendRedeemer = SpendRedeemer
 deriving via
-  (DerivePConstantViaData SpendRedeemer PSpendRedeemer)
+  DeriveDataPLiftable PSpendRedeemer SpendRedeemer
   instance
-    PConstantDecl SpendRedeemer
+    PLiftable PSpendRedeemer
 
-spend :: Term s (PTxOut :--> PTxOut :--> PBool) -> Term s PValidator
+spend ::
+  Term s (PTxOut :--> PTxOut :--> PBool) ->
+  Term s (PScriptContext :--> POpaque)
 spend f =
-  plam $ \_datum redeemer ctx -> unTermCont $ do
-    let red = punsafeCoerce @_ @_ @PSpendRedeemer redeemer
-    redF <- pletFieldsC @'["inIdx", "outIdx"] red
-    ctxF <- pletFieldsC @'["txInfo", "purpose"] ctx
-    PSpending ownRef' <- pmatchC ctxF.purpose
-    ownRef <- pletC $ pfield @"_0" # ownRef'
-    txInfoF <- pletFieldsC @'["inputs", "outputs"] ctxF.txInfo
-    let inIdx = pasInt # redF.inIdx
-        outIdx = pasInt # redF.outIdx
-        outOutput = pelemAt @PBuiltinList # outIdx # txInfoF.outputs
-    inInputF <- pletFieldsC @'["outRef", "resolved"] (pelemAt @PBuiltinList # inIdx # txInfoF.inputs)
-    return $
-      popaque $
-        pif
-          (ptraceIfFalse "Indicated input must match the spending one" (ownRef #== inInputF.outRef))
-          (f # inInputF.resolved # outOutput)
-          perror
+  plam $ \ctx -> P.do
+    PScriptContext
+      { pscriptContext'txInfo
+      , pscriptContext'redeemer
+      , pscriptContext'scriptInfo
+      } <-
+      pmatch ctx
+    PRedeemer redeemer <- pmatch pscriptContext'redeemer
+    PSpendRedeemer {pspendRedeemer'inIdx, pspendRedeemer'outIdx} <-
+      pmatch $ pfromData $ pparseData @PSpendRedeemer redeemer
+    PSpendingScript ownRef _ <- pmatch pscriptContext'scriptInfo
+    PTxInfo {ptxInfo'inputs, ptxInfo'outputs} <- pmatch pscriptContext'txInfo
+    input <-
+      plet $
+        pfromData $
+          pelemAt
+            # (pasInt # pfromData pspendRedeemer'inIdx)
+            # pfromData ptxInfo'inputs
+    PTxInInfo {ptxInInfo'outRef, ptxInInfo'resolved} <- pmatch input
+    pif
+      (ptraceInfoIfFalse "Indicated input must match the spending one" (ownRef #== ptxInInfo'outRef))
+      ( popaque $
+          f
+            # ptxInInfo'resolved
+            # pfromData
+              ( pelemAt
+                  # (pasInt # pfromData pspendRedeemer'outIdx)
+                  # pfromData ptxInfo'outputs
+              )
+      )
+      perror

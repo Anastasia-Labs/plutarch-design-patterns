@@ -2,18 +2,20 @@ module Plutarch.Multivalidator (
   multivalidator,
 ) where
 
-import Plutarch.Api.V2 (PScriptContext)
-import Plutarch.Builtin (pasConstr)
+import Plutarch.LedgerApi.V3 (
+  PScriptContext (..),
+  PScriptInfo (..),
+ )
+import Plutarch.Monadic qualified as P
 import Plutarch.Prelude
-import Plutarch.Unsafe (punsafeCoerce)
 
 multivalidator ::
-  Term s (PData :--> PScriptContext :--> POpaque) ->
-  Term s (PData :--> PData :--> PScriptContext :--> POpaque) ->
-  Term s (PData :--> PData :--> PScriptContext :--> POpaque)
-multivalidator mintingPolicy spendingValidator = plam $ \redeemerOrDatum scriptContextOrRedeemer -> P.do
-  let constrIndex = pfstBuiltin #$ pasConstr # scriptContextOrRedeemer
-  pif
-    (0 #< constrIndex)
-    (spendingValidator # redeemerOrDatum # scriptContextOrRedeemer)
-    (punsafeCoerce $ mintingPolicy # redeemerOrDatum # punsafeCoerce scriptContextOrRedeemer)
+  Term s (PScriptContext :--> a) ->
+  Term s (PScriptContext :--> a) ->
+  Term s (PScriptContext :--> a)
+multivalidator mintingPolicy spendingValidator =
+  plam $ \ctx -> P.do
+    PScriptContext {pscriptContext'scriptInfo} <- pmatch ctx
+    pmatch pscriptContext'scriptInfo $ \case
+      PSpendingScript _ _ -> spendingValidator # ctx
+      _ -> mintingPolicy # ctx

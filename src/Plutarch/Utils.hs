@@ -13,90 +13,104 @@ module Plutarch.Utils (
 ) where
 
 import Data.Text qualified as T
-import Plutarch.Api.V1 (AmountGuarantees (..), KeyGuarantees)
-import Plutarch.Api.V2 (PCurrencySymbol, PMap (PMap), PTokenName, PTxInInfo, PTxOut, PTxOutRef, PValue (..))
-import Plutarch.DataRepr (
-  DerivePConstantViaData (DerivePConstantViaData),
+import GHC.Generics (Generic)
+import Generics.SOP qualified as SOP
+import Plutarch.LedgerApi.AssocMap qualified as AssocMap
+import Plutarch.LedgerApi.V3 (
+  PCurrencySymbol,
+  PMintValue,
+  PTokenName,
+  PTxInInfo (..),
+  PTxOut,
+  PTxOutRef,
  )
-import Plutarch.Lift (PConstantDecl, PUnsafeLiftDecl (PLifted))
-import Plutarch.Prelude
+import Plutarch.Prelude hiding ((#>))
 import PlutusTx qualified
 
 data WrapperRedeemer
   = None
   | WrapperRedeemer Integer
+  deriving stock (Generic)
 
-PlutusTx.makeLift ''WrapperRedeemer
 PlutusTx.makeIsDataIndexed ''WrapperRedeemer [('None, 0), ('WrapperRedeemer, 1)]
 
 data PWrapperRedeemer (s :: S)
-  = PNone (Term s (PDataRecord '[]))
-  | PWrapperRedeemer (Term s (PDataRecord '["idx" ':= PInteger]))
+  = PNone
+  | PWrapperRedeemer (Term s (PAsData PInteger))
   deriving stock (Generic)
-  deriving anyclass (PlutusType, PIsData)
+  deriving anyclass (SOP.Generic, PIsData)
+  deriving (PlutusType, PValidateData) via DeriveAsDataStruct PWrapperRedeemer
 
-instance DerivePlutusType PWrapperRedeemer where
-  type DPTStrat _ = PlutusTypeData
+deriving via
+  DeriveDataPLiftable PWrapperRedeemer WrapperRedeemer
+  instance
+    PLiftable PWrapperRedeemer
 
-instance PUnsafeLiftDecl PWrapperRedeemer where type PLifted PWrapperRedeemer = WrapperRedeemer
-deriving via (DerivePConstantViaData WrapperRedeemer PWrapperRedeemer) instance PConstantDecl WrapperRedeemer
-
-ptryOwnInput :: (PIsListLike list PTxInInfo) => Term s (list PTxInInfo :--> PTxOutRef :--> PTxOut)
+ptryOwnInput ::
+  (PIsListLike list (PAsData PTxInInfo)) =>
+  Term s (list (PAsData PTxInInfo) :--> PTxOutRef :--> PTxOut)
 ptryOwnInput =
   plam $ \inputs ownRef ->
-    precList (\self x xs -> pletFields @'["outRef", "resolved"] x $ \txInFields -> pif (ownRef #== txInFields.outRef) txInFields.resolved (self # xs)) (const perror) # inputs
+    precList
+      ( \self inputData rest ->
+          pmatch (pfromData inputData) $ \PTxInInfo {ptxInInfo'outRef, ptxInInfo'resolved} ->
+            pif
+              (ownRef #== ptxInInfo'outRef)
+              ptxInInfo'resolved
+              (self # rest)
+      )
+      (const perror)
+      # inputs
 
 pheadSingleton :: (PListLike list, PElemConstraint list a) => Term s (list a :--> a)
-pheadSingleton = phoistAcyclic $
-  plam $ \xs ->
-    pelimList (\x xs -> pif (pnull # xs) x (ptraceError "List contains more than one element.")) perror xs
+pheadSingleton =
+  phoistAcyclic $
+    plam $ \xs ->
+      pelimList
+        (\x rest -> pif (pnull # rest) x (ptraceInfoError "List contains more than one element."))
+        perror
+        xs
 
-passert ::
-  forall (s :: S) (a :: PType).
-  T.Text -> -- long trace
-  Term s PBool ->
-  Term s a ->
-  Term s a
-passert longErrorMsg b inp = pif b inp $ ptraceError (pconstant longErrorMsg)
+passert :: T.Text -> Term s PBool -> Term s a -> Term s a
+passert longErrorMsg b inp = pif b inp $ ptraceInfoError (pconstant longErrorMsg)
 
 -- | Probably more effective than `plength . pflattenValue`
-pcountOfUniqueTokens ::
-  forall
-    (keys :: KeyGuarantees)
-    (amounts :: AmountGuarantees)
-    (s :: S).
-  Term s (PValue keys amounts :--> PInteger)
-pcountOfUniqueTokens = phoistAcyclic $
-  plam $ \val ->
-    let tokensLength = plam (\pair -> pmatch (pfromData $ psndBuiltin # pair) $ \(PMap tokens) -> plength # tokens)
-     in pmatch val $ \(PValue val') ->
-          pmatch val' $ \(PMap csPairs) -> pfoldl # plam (\acc x -> acc + (tokensLength # x)) # 0 # csPairs
+pcountOfUniqueTokens :: Term s (PMintValue :--> PInteger)
+pcountOfUniqueTokens =
+  phoistAcyclic $
+    plam $ \value ->
+      pfoldl
+        # plam
+          ( \count pair ->
+              pmatch pair $ \(PBuiltinPair _ tokenMapData) ->
+                count + plength # ptokenPairs (pfromData tokenMapData)
+          )
+        # 0
+        # pmintValuePairs value
 
 ptryLookupValue ::
-  forall
-    (keys :: KeyGuarantees)
-    (amounts :: AmountGuarantees)
-    (s :: S).
   Term
     s
     ( PAsData PCurrencySymbol
-        :--> PValue keys amounts
+        :--> PMintValue
         :--> PBuiltinList (PBuiltinPair (PAsData PTokenName) (PAsData PInteger))
     )
-ptryLookupValue = phoistAcyclic $
-  plam $ \policyId val ->
-    pmatch val $ \(PValue val') ->
-      precList
-        ( \self x xs ->
-            pif
-              (pfstBuiltin # x #== policyId)
-              ( pmatch (pfromData (psndBuiltin # x)) $ \(PMap tokens) ->
-                  tokens
-              )
-              (self # xs)
-        )
-        (const perror)
-        # pto val'
+ptryLookupValue =
+  phoistAcyclic $
+    plam $ \policyId value ->
+      ( pfix $ \self -> plam $ \pairs ->
+          pelimList
+            ( \pair rest ->
+                pmatch pair $ \(PBuiltinPair currencySymbol tokenMapData) ->
+                  pif
+                    (currencySymbol #== policyId)
+                    (ptokenPairs $ pfromData tokenMapData)
+                    (self # rest)
+            )
+            perror
+            pairs
+      )
+        # pmintValuePairs value
 
 (#>) :: (POrd t) => Term s t -> Term s t -> Term s PBool
 a #> b = b #< a
@@ -106,3 +120,22 @@ preverse :: (PIsListLike l a) => Term s (l a :--> l a)
 preverse =
   phoistAcyclic $
     pfoldl # plam (\ys y -> pcons # y # ys) # pnil
+
+pmintValuePairs ::
+  Term s PMintValue ->
+  Term
+    s
+    ( PBuiltinList
+        ( PBuiltinPair
+            (PAsData PCurrencySymbol)
+            (PAsData (AssocMap.PSortedMap PTokenName PInteger))
+        )
+    )
+pmintValuePairs value = pto (pto (pto (pto value)))
+
+ptokenPairs ::
+  Term s (AssocMap.PSortedMap PTokenName PInteger) ->
+  Term
+    s
+    (PBuiltinList (PBuiltinPair (PAsData PTokenName) (PAsData PInteger)))
+ptokenPairs tokenMap = pto (pto tokenMap)
