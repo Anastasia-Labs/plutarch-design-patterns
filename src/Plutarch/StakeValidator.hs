@@ -3,6 +3,7 @@ module Plutarch.StakeValidator (
   withdraw,
 ) where
 
+import Plutarch.Core.Utils (ptryOwnInput)
 import Plutarch.LedgerApi.V3 (
   PAddress (..),
   PCredential,
@@ -14,7 +15,6 @@ import Plutarch.LedgerApi.V3 (
  )
 import Plutarch.Monadic qualified as P
 import Plutarch.Prelude
-import Plutarch.Utils (ptryOwnInput)
 
 spend :: Term s (PScriptContext :--> PUnit)
 spend =

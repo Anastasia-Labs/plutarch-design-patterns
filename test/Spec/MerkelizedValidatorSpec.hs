@@ -10,6 +10,7 @@ module Spec.MerkelizedValidatorSpec (
   withdraw,
 ) where
 
+import Plutarch.Core.List (pheadSingleton)
 import Plutarch.LedgerApi.V3 (
   PCredential,
   PScriptContext (..),
@@ -19,7 +20,6 @@ import Plutarch.MerkelizedValidator qualified as MerkelizedValidator
 import Plutarch.Monadic qualified as P
 import Plutarch.Prelude
 import Plutarch.Test.Unit (testEval, testEvalFail)
-import Plutarch.Utils (pheadSingleton)
 import PlutusLedgerApi.V3 (
   BuiltinByteString,
   Credential,

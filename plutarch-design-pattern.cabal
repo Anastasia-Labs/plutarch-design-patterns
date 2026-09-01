@@ -99,6 +99,7 @@ common test-dependencies
     , bytestring
     , plutarch
     , plutarch-ledger-api
+    , plutarch-onchain-lib
     , plutarch-testlib
     , plutus-ledger-api
     , plutus-tx
@@ -118,7 +119,6 @@ library
     Plutarch.SingularUTxOIndexerOneToMany
     Plutarch.StakeValidator
     Plutarch.TxLevelMinter
-    Plutarch.Utils
     Plutarch.ValidityRangeNormalization
 
   build-depends:
@@ -126,6 +126,7 @@ library
     , generics-sop
     , plutarch
     , plutarch-ledger-api
+    , plutarch-onchain-lib
     , plutus-ledger-api
     , plutus-tx
     , text

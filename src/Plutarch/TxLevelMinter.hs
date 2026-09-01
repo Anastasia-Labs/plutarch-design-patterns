@@ -1,8 +1,16 @@
+{-# LANGUAGE TemplateHaskell #-}
+
 module Plutarch.TxLevelMinter (
   spend,
   mint,
+  WrapperRedeemer (..),
+  PWrapperRedeemer (..),
 ) where
 
+import GHC.Generics (Generic)
+import Generics.SOP qualified as SOP
+import Plutarch.Core.List (pheadSingleton)
+import Plutarch.Core.Value qualified as Value
 import Plutarch.LedgerApi.V3 (
   PAddress (..),
   PCredential (..),
@@ -17,14 +25,27 @@ import Plutarch.LedgerApi.V3 (
   PTxOut (..),
  )
 import Plutarch.Monadic qualified as P
-import Plutarch.Prelude hiding ((#>))
-import Plutarch.Utils (
-  PWrapperRedeemer (..),
-  pcountOfUniqueTokens,
-  pheadSingleton,
-  ptryLookupValue,
-  (#>),
- )
+import Plutarch.Prelude
+import PlutusTx qualified
+
+data WrapperRedeemer
+  = None
+  | WrapperRedeemer Integer
+  deriving stock (Generic)
+
+PlutusTx.makeIsDataIndexed ''WrapperRedeemer [('None, 0), ('WrapperRedeemer, 1)]
+
+data PWrapperRedeemer (s :: S)
+  = PNone
+  | PWrapperRedeemer (Term s (PAsData PInteger))
+  deriving stock (Generic)
+  deriving anyclass (SOP.Generic, PIsData)
+  deriving (PlutusType, PValidateData) via DeriveAsDataStruct PWrapperRedeemer
+
+deriving via
+  DeriveDataPLiftable PWrapperRedeemer WrapperRedeemer
+  instance
+    PLiftable PWrapperRedeemer
 
 spend :: Term s (PTokenName :--> PScriptContext :--> PUnit)
 spend =
@@ -53,15 +74,15 @@ spend =
       PScriptCredential ownValHashData <- pmatch paddress'credential
       PScriptHash ownValHash <- pmatch $ pfromData ownValHashData
       ownCurrencySymbol <- plet $ pcon $ PCurrencySymbol ownValHash
-      mintedValue <- plet $ pfromData ptxInfo'mint
-      tkPairs <- plet $ ptryLookupValue # pdata ownCurrencySymbol # mintedValue
+      mintedValue <- plet $ pto $ pfromData ptxInfo'mint
+      tkPairs <- plet $ Value.ptryLookupValue # pdata ownCurrencySymbol # mintedValue
       tkPair <- plet $ pheadSingleton # tkPairs
       PBuiltinPair tokenNameData amountData <- pmatch tkPair
       let tnMinted = pfromData tokenNameData
           numMinted = pfromData amountData
       pif
         ( ptraceInfoIfFalse "Incorrect indexed input" (ownRef #== ptxInInfo'outRef)
-            #&& ptraceInfoIfFalse "Too many assets" (pcountOfUniqueTokens # mintedValue #== 1)
+            #&& ptraceInfoIfFalse "Too many assets" (Value.pcountOfUniqueTokens # mintedValue #== 1)
             #&& ptraceInfoIfFalse "Incorrect token name" (tnMinted #== mintTN)
             #&& ptraceInfoIfFalse "Incorrect minted amount" ((numMinted #< 0) #|| (numMinted #> 0))
         )

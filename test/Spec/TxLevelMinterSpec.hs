@@ -12,8 +12,8 @@ import Plutarch.LedgerApi.V3 (PCurrencySymbol, PScriptContext, PTxInfo)
 import Plutarch.Multivalidator qualified as Multivalidator
 import Plutarch.Prelude
 import Plutarch.Test.Unit (testEval, testEvalFail)
+import Plutarch.TxLevelMinter (WrapperRedeemer (..))
 import Plutarch.TxLevelMinter qualified as TxLevelMinter
-import Plutarch.Utils (WrapperRedeemer (..))
 import PlutusLedgerApi.V3 (
   Address (..),
   BuiltinByteString,

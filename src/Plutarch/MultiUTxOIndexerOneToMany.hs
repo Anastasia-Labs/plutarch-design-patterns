@@ -21,10 +21,10 @@ import Plutarch.LedgerApi.V3 (
   PTxInfo (..),
   PTxOut (..),
  )
+import Plutarch.List (preverse)
 import Plutarch.Monadic qualified as P
-import Plutarch.Prelude hiding ((#>))
+import Plutarch.Prelude
 import Plutarch.StakeValidator qualified as StakeValidator
-import Plutarch.Utils (preverse, (#>))
 import PlutusTx (BuiltinData)
 import PlutusTx qualified
 
