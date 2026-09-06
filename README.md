@@ -22,6 +22,20 @@ To help facilitate faster development of Cardano smart contracts, we present a c
 
 ## How to Use
 
+Add this to your project's `cabal.project`, replacing `<commit-hash>` with
+your chosen revision:
+
+```cabal
+source-repository-package
+  type: git
+  location: https://github.com/Anastasia-Labs/plutarch-design-patterns.git
+  tag: <commit-hash>
+```
+
+Then add `plutarch-design-pattern` to `build-depends` in your `.cabal` file.
+For the required compiler and dependency settings, see this library's
+[cabal.project](cabal.project) at the same revision.
+
 ### Prerequisites
 
 Before you begin, ensure you have [Nix](https://nixos.org/download.html) installed on your system. Nix is used for package management and to provide a consistent development environment. To install run the following command:
@@ -39,8 +53,7 @@ experimental-features = nix-command flakes
 allow-import-from-derivation = true
 ```
 
-The flake declares optional binary caches in `nixConfig`. Pass
-`--accept-flake-config` when invoking Nix to use those settings. On a multi-user
+The flake declares optional binary caches in `nixConfig`. On a multi-user
 Nix installation, an administrator may still need to trust the substituters
 and public keys globally.
 
@@ -75,11 +88,12 @@ direnv allow
 Activate the development environment with Nix:
 
 ```sh
-nix develop .
+nix develop
 ```
 
 The development shell uses GHC 9.6.6 and includes Cabal, HLS, fourmolu,
-cabal-fmt, and the configured pre-commit hooks.
+cabal-fmt, and the configured pre-commit hooks. Run `make help` to list the
+available commands.
 
 Build the library and test suite:
 
@@ -96,7 +110,7 @@ cabal test --test-show-details=direct
 Evaluate and build the checks exported by the flake:
 
 ```sh
-nix flake check --accept-flake-config
+nix flake check
 ```
 
 This includes the library and test checks as well as cabal-fmt and fourmolu
@@ -137,13 +151,11 @@ The primary purpose of this pattern is to offer a more optimized solution for a 
 
 ##### One-to-One
 
-By specifying the redeemer type to be a pair of integers (`(Int, Int)`), the validator can efficiently pick the input UTxO, match its output reference to make sure it's the one that's getting spent, and similarly pick the corresponding output UTxO in order to perform an arbitrary validation between the two.
-
-The provided example validates that the two are identical, and each carries a single state token apart from Ada.
+By specifying the input and output indices in the redeemer as a pair of integers, the validator can efficiently pick the input UTxO, match its output reference to make sure it's the one that's getting spent, and similarly pick the corresponding output UTxO in order to perform an arbitrary validation between the two.
 
 ##### One-to-Many
 
-Here the validator looks for a set of outputs for the given input, through a redeemer of type `(Int, List<Int>)` (output indices are required to be in ascending order to disallow duplicates). To make the abstraction as efficient as possible, the provided higher-order function takes 3 validation logics:
+Here the validator looks for a set of outputs for the given input, through a redeemer containing an input index and a list of output indices (output indices are required to be in strictly ascending order to disallow duplicates). To make the abstraction as efficient as possible, the provided higher-order function takes 3 validation logics:
 
 1. A function that validates the spending `Input` (single invocation).
 2. A function that validates the input UTxO against a corresponding output UTxO. Note that this is executed for each associated output.
@@ -151,16 +163,18 @@ Here the validator looks for a set of outputs for the given input, through a red
 
 #### Multi UTxO Indexer
 
-While the singular variant of this pattern is primarily meant for the spending endpoint of a contract, a multi UTxO indexer utilizes the stake validator provided by this package. And therefore the spending endpoint can be taken directly from `stake_validator`.
+While the singular variant of this pattern is primarily meant for the spending endpoint of a contract, a multi UTxO indexer utilizes the stake validator provided by this package. And therefore the spending endpoint can be taken directly from `Plutarch.StakeValidator.spend`.
 
 Subsequently, spend redeemers are irrelevant here. The redeemer of the withdrawal endpoint is expected to be a properly sorted list of pairs of indices (for the one-to-one case), or a list of one-to-many mappings of indices.
+
+Input indices and the sequence of output indices must be strictly ascending, and every matching input must be covered.
 
 It's worth emphasizing that it is necessary for this design to be a
 multi-validator as the staking logic filters inputs that are coming from a script address which its validator hash is identical to its own.
 
 The distinction between one-to-one and one-to-many variants here is very similar to the singular case, so please refer to [its section above](#singular-utxo-indexer) for more details.
 
-The primary difference is that here, input indices should be provided for the _filtered_ list of inputs, i.e. only script inputs, unlike the singular variant where the index applies to all the inputs of the transaction. This slight inconvenience is for preventing extra overhead on-chain.
+The primary difference is that here, input indices should be provided for the _filtered_ list of inputs, i.e. only inputs from the same script, unlike the singular variant where the index applies to all the inputs of the transaction. This slight inconvenience is for preventing extra overhead on-chain.
 
 ### Transaction Level Validator Minting Policy
 
@@ -196,10 +210,12 @@ Since transaction size is limited in Cardano, some validators benefit from a sol
 This design pattern offers an interface for off-loading such logics into an external withdrawal script, so that the size of the validator itself can stay within the limits of Cardano.
 
 > [!NOTE]
-> While currently the sizes of reference scripts are essentially irrelevant,
-> they'll soon impose additional fees.
-> See [here](https://github.com/IntersectMBO/cardano-ledger/issues/3952) for
-> more info.
+> Since Conway, reference scripts contribute an additional fee based on their
+> total size across spending and reference inputs. The fee uses tiered pricing,
+> starting from a base price per byte set by protocol parameters, and is added
+> to the fees for transaction size and script execution.
+> See the ledger's [reference-script size calculation](https://github.com/IntersectMBO/cardano-ledger/blob/master/eras/conway/impl/src/Cardano/Ledger/Conway/UTxO.hs)
+> and [fee calculation](https://github.com/IntersectMBO/cardano-ledger/blob/master/eras/conway/impl/src/Cardano/Ledger/Conway/Tx.hs).
 
 The exposed `spend` function from `Plutarch.MerkelizedValidator` expects three arguments:
 
