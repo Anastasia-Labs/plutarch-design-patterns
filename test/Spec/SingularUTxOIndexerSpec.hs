@@ -11,7 +11,7 @@ module Spec.SingularUTxOIndexerSpec (
 import Plutarch.LedgerApi.V3 (PScriptContext)
 import Plutarch.Prelude
 import Plutarch.SingularUTxOIndexer qualified as SingularUTxOIndexer
-import Plutarch.Test.Unit (testEval, testEvalFail)
+import Plutarch.Test.Unit (testEvalEqual, testEvalFail)
 import PlutusLedgerApi.V3 (
   Address (..),
   BuiltinByteString,
@@ -42,7 +42,7 @@ import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (Property, chooseInt, forAll, testProperty)
 
 -- | Implements a validator that enforces specific UTxO spending rules using input-output pair indexing.
-spend :: Term s (PScriptContext :--> POpaque)
+spend :: Term s (PScriptContext :--> PUnit)
 spend = SingularUTxOIndexer.spend inputOutputValidator
 
 ownValHash :: ScriptHash
@@ -95,8 +95,13 @@ unitTest :: TestTree
 unitTest =
   testGroup
     "Singular UTxO Indexer Unit Test"
-    [ testEval "Pass" (spend # pconstant (spendContext redeemer))
+    [ testEvalEqual "Pass" (spend # pconstant (spendContext redeemer)) (pconstant ())
     , testEvalFail "Fail - Incorrect redeemer" (spend # pconstant (spendContext badRedeemer))
+    , testEvalFail
+        "Fail - Input output predicate"
+        ( SingularUTxOIndexer.spend (plam $ \_ _ -> pcon PFalse)
+            # pconstant (spendContext redeemer)
+        )
     ]
 
 mkSpendCtx :: BuiltinByteString -> BuiltinByteString -> BuiltinByteString -> BuiltinByteString -> ScriptContext

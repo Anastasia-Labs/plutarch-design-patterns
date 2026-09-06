@@ -43,7 +43,7 @@ deriving via
 
 spend ::
   Term s (PTxOut :--> PTxOut :--> PBool) ->
-  Term s (PScriptContext :--> POpaque)
+  Term s (PScriptContext :--> PUnit)
 spend f =
   plam $ \ctx -> P.do
     PScriptContext
@@ -65,14 +65,17 @@ spend f =
             # pfromData ptxInfo'inputs
     PTxInInfo {ptxInInfo'outRef, ptxInInfo'resolved} <- pmatch input
     pif
-      (ptraceInfoIfFalse "Indicated input must match the spending one" (ownRef #== ptxInInfo'outRef))
-      ( popaque $
-          f
-            # ptxInInfo'resolved
-            # pfromData
-              ( pelemAt
-                  # (pasInt # pfromData pspendRedeemer'outIdx)
-                  # pfromData ptxInfo'outputs
-              )
+      ( ptraceInfoIfFalse "Indicated input must match the spending one" (ownRef #== ptxInInfo'outRef)
+          #&& ptraceInfoIfFalse
+            "Input Output Validator Fails"
+            ( f
+                # ptxInInfo'resolved
+                # pfromData
+                  ( pelemAt
+                      # (pasInt # pfromData pspendRedeemer'outIdx)
+                      # pfromData ptxInfo'outputs
+                  )
+            )
       )
+      (pconstant ())
       perror

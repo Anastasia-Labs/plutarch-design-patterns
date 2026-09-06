@@ -11,7 +11,7 @@ module Spec.SingularUTxOIndexerOneToManySpec (
 import Plutarch.LedgerApi.V3 (PScriptContext)
 import Plutarch.Prelude
 import Plutarch.SingularUTxOIndexerOneToMany qualified as SingularUTxOIndexerOneToMany
-import Plutarch.Test.Unit (testEval, testEvalFail)
+import Plutarch.Test.Unit (testEvalEqual, testEvalFail)
 import PlutusLedgerApi.V3 (
   Address (..),
   BuiltinByteString,
@@ -44,7 +44,7 @@ import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (Property, chooseInt, forAll, testProperty)
 
 -- | A validator that enforces one-to-many UTxO indexing rules for spend transactions.
-spend :: Term s (PScriptContext :--> POpaque)
+spend :: Term s (PScriptContext :--> PUnit)
 spend =
   SingularUTxOIndexerOneToMany.spend
     inputValidator
@@ -99,8 +99,16 @@ unitTest :: TestTree
 unitTest =
   testGroup
     "Singular UTxO Indexer One To Many Unit Test"
-    [ testEval "Pass" (spend # pconstant (spendContext redeemer))
+    [ testEvalEqual "Pass" (spend # pconstant (spendContext redeemer)) (pconstant ())
     , testEvalFail "Fail - Incorrect redeemer" (spend # pconstant (spendContext badRedeemer))
+    , testEvalFail
+        "Fail - Collective output predicate"
+        ( SingularUTxOIndexerOneToMany.spend
+            inputValidator
+            inputOutputValidator
+            (plam $ \_ _ -> pcon PFalse)
+            # pconstant (spendContext redeemer)
+        )
     ]
 
 mkSpendCtx :: BuiltinByteString -> BuiltinByteString -> BuiltinByteString -> BuiltinByteString -> ScriptContext

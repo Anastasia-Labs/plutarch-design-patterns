@@ -56,7 +56,7 @@ spend ::
   Term s (PTxInInfo :--> PBool) ->
   Term s (PTxOut :--> PTxOut :--> PBool) ->
   Term s (PBuiltinList PTxOut :--> PInteger :--> PBool) ->
-  Term s (PScriptContext :--> POpaque)
+  Term s (PScriptContext :--> PUnit)
 spend inputValidator inputOutputValidator collectiveOutputValidator =
   plam $ \ctx -> P.do
     PScriptContext
@@ -92,8 +92,9 @@ spend inputValidator inputOutputValidator collectiveOutputValidator =
     pif
       ( ptraceInfoIfFalse "Indicated input must match the spending one" (ownRef #== ptxInInfo'outRef)
           #&& ptraceInfoIfFalse "Input Validator Fails" (inputValidator # input)
+          #&& ptraceInfoIfFalse "Collective Output Validator Fails" (collectiveOutputValidator # outTxOuts # outputCount)
       )
-      (popaque $ collectiveOutputValidator # outTxOuts # outputCount)
+      (pconstant ())
       perror
 
 matchAgg ::
