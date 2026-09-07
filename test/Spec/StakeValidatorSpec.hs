@@ -8,161 +8,140 @@ module Spec.StakeValidatorSpec (
   propertyTest,
 ) where
 
-import Plutarch.Api.V2 (PScriptContext, PStakeValidator, PStakingCredential, PValidator)
-import Plutarch.Api.V2.Contexts (PTxInfo)
-import Plutarch.Builtin (pforgetData)
-import Plutarch.Context (
-  UTXO,
-  address,
-  buildRewarding',
-  buildSpending',
-  input,
-  withRef,
-  withRefIndex,
-  withRefTxId,
-  withRewarding,
-  withSpendingOutRef,
-  withSpendingOutRefId,
-  withValue,
-  withdrawal,
- )
+import Plutarch.LedgerApi.V3 (PCredential, PScriptContext, PTxInfo)
 import Plutarch.Multivalidator qualified as Multivalidator
 import Plutarch.Prelude
 import Plutarch.StakeValidator qualified as StakeValidator
-import Plutarch.Test.Precompiled (Expectation (Failure, Success), testEvalCase, tryFromPTerm)
-import Plutarch.Test.QuickCheck (fromPPartial)
-import Plutarch.Utils (WrapperRedeemer (..))
-import PlutusLedgerApi.V2 (
+import Plutarch.Test.Unit (testEval, testEvalFail)
+import PlutusLedgerApi.V3 (
   Address (..),
   BuiltinByteString,
   Credential (..),
+  Redeemer (..),
   ScriptContext,
   ScriptHash,
+  ScriptInfo (..),
   StakingCredential (..),
   TxId (..),
   TxOutRef (..),
-  singleton,
  )
 import PlutusTx qualified
-import Spec.Utils (genByteString, mkAddressFromByteString, mkStakingHashFromByteString)
+import Spec.Utils (
+  evalSucceeds,
+  genByteString,
+  mkAddressFromByteString,
+  mkScriptContext,
+  mkScriptCredential,
+  mkTxInInfo,
+ )
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (Property, chooseInteger, forAll, testProperty)
 
 -- | Implements the spending logic.
-spend :: Term s PValidator
+spend :: Term s (PScriptContext :--> PUnit)
 spend = StakeValidator.spend
 
 -- | Implements the withdrawal logic.
-withdrawLogic :: Term s (PData :--> PStakingCredential :--> PTxInfo :--> PUnit)
-withdrawLogic =
-  plam $ \_ _ _ -> unTermCont $ do
-    pure $ pconstant ()
+withdrawLogic :: Term s (PData :--> PCredential :--> PTxInfo :--> PUnit)
+withdrawLogic = plam $ \_ _ _ -> pconstant ()
 
-withdraw :: Term s PStakeValidator
+withdraw :: Term s (PScriptContext :--> PUnit)
 withdraw = StakeValidator.withdraw withdrawLogic
 
 -- | Core validator that combines spend and withdraw functionalities.
-validator :: Term s PValidator
+validator :: Term s (PScriptContext :--> PUnit)
 validator = Multivalidator.multivalidator withdraw spend
 
 ownValHash :: ScriptHash
 ownValHash = "65c4b5e51c3c58c15af080106e8ce05b6efbb475aa5e5c5ca9372a45"
 
-rewardingCred :: StakingCredential
-rewardingCred = StakingHash (ScriptCredential ownValHash)
+rewardingCred :: Credential
+rewardingCred = ScriptCredential ownValHash
 
 inputAddr :: Address
 inputAddr =
   let stakeCred = ScriptCredential "b055a795895b15d9af25acb752ac89c78524acfa387acb626c7e1bc8"
    in Address (ScriptCredential ownValHash) (Just (StakingHash stakeCred))
 
-inputUTXO :: UTXO
-inputUTXO =
-  mconcat
-    [ address inputAddr
-    , withValue (singleton "" "" 4_000_000)
-    , withRefTxId "2c6dbc95c1e96349c4131a9d19b029362542b31ffd2340ea85dd8f28e271ff6d"
-    , withRefIndex 1
-    ]
+inputOutRef :: TxOutRef
+inputOutRef =
+  TxOutRef
+    (TxId "2c6dbc95c1e96349c4131a9d19b029362542b31ffd2340ea85dd8f28e271ff6d")
+    1
 
 -- | Context setup for standard spend tests including necessary UTxO and withdrawal credentials.
 spendCtx :: ScriptContext
 spendCtx =
-  buildSpending' $
-    mconcat
-      [ input inputUTXO
-      , withSpendingOutRefId "2c6dbc95c1e96349c4131a9d19b029362542b31ffd2340ea85dd8f28e271ff6d"
-      , withdrawal rewardingCred 1
-      ]
+  mkScriptContext
+    [mkTxInInfo inputOutRef inputAddr mempty]
+    []
+    mempty
+    [(rewardingCred, 1)]
+    []
+    (Redeemer $ PlutusTx.toBuiltinData ())
+    (SpendingScript inputOutRef Nothing)
 
 spendIncorrectOutRefCtx :: ScriptContext
 spendIncorrectOutRefCtx =
-  buildSpending' $
-    mconcat
-      [ input inputUTXO
-      , withSpendingOutRefId "9b029362542b31ffd2340ea85dd8f28e271ff6d2c6dbc95c1e96349c4131a9d1"
-      , withdrawal rewardingCred 1
-      ]
+  mkScriptContext
+    [mkTxInInfo inputOutRef inputAddr mempty]
+    []
+    mempty
+    [(rewardingCred, 1)]
+    []
+    (Redeemer $ PlutusTx.toBuiltinData ())
+    ( SpendingScript
+        (TxOutRef "9b029362542b31ffd2340ea85dd8f28e271ff6d2c6dbc95c1e96349c4131a9d1" 0)
+        Nothing
+    )
 
 -- | Context setup for successful withdrawal tests.
 withdrawCtx :: ScriptContext
 withdrawCtx =
-  buildRewarding' $
-    mconcat
-      [ withRewarding rewardingCred
-      ]
+  mkScriptContext
+    []
+    []
+    mempty
+    []
+    []
+    (Redeemer $ PlutusTx.toBuiltinData ())
+    (RewardingScript rewardingCred)
 
 -- | Context setup for withdrawal tests expected to fail.
 badWithdrawCtx :: ScriptContext
 badWithdrawCtx =
-  buildSpending' $ mconcat []
+  mkScriptContext
+    []
+    []
+    mempty
+    []
+    []
+    (Redeemer $ PlutusTx.toBuiltinData ())
+    (SpendingScript inputOutRef Nothing)
 
 -- | Unit tests to verify the correct behavior and error handling of the validator under various scenarios.
 unitTest :: TestTree
-unitTest = tryFromPTerm "Stake Validator Unit Test" validator $ do
-  testEvalCase
-    "Pass - Withdraw"
-    Success
-    [ PlutusTx.toData ()
-    , PlutusTx.toData withdrawCtx
-    ]
-  testEvalCase
-    "Fail - Withdraw"
-    Failure
-    [ PlutusTx.toData ()
-    , PlutusTx.toData badWithdrawCtx
-    ]
-  testEvalCase
-    "Pass - Spend"
-    Success
-    [ PlutusTx.toData ()
-    , PlutusTx.toData (WrapperRedeemer 0)
-    , PlutusTx.toData spendCtx
-    ]
-  testEvalCase
-    "Fail - Spend"
-    Failure
-    [ PlutusTx.toData ()
-    , PlutusTx.toData (WrapperRedeemer 0)
-    , PlutusTx.toData spendIncorrectOutRefCtx
-    ]
-
-mkInputUTxO :: TxOutRef -> BuiltinByteString -> UTXO
-mkInputUTxO txOutRef valHash =
-  mconcat
-    [ address (mkAddressFromByteString valHash)
-    , withRef txOutRef
+unitTest =
+  testGroup
+    "Stake Validator Unit Test"
+    [ testEval "Pass - Withdraw" (validator # pconstant withdrawCtx)
+    , testEvalFail "Fail - Withdraw" (validator # pconstant badWithdrawCtx)
+    , testEval "Pass - Spend" (validator # pconstant spendCtx)
+    , testEvalFail "Fail - Spend" (validator # pconstant spendIncorrectOutRefCtx)
     ]
 
 mkSpendCtx :: BuiltinByteString -> BuiltinByteString -> Integer -> ScriptContext
 mkSpendCtx txId valHash withdrawAmount =
   let txOutRef = TxOutRef (TxId txId) 0
-   in buildSpending' $
-        mconcat
-          [ input (mkInputUTxO txOutRef valHash)
-          , withSpendingOutRef txOutRef
-          , withdrawal (mkStakingHashFromByteString valHash) withdrawAmount
-          ]
+      credential = mkScriptCredential valHash
+   in mkScriptContext
+        [mkTxInInfo txOutRef (mkAddressFromByteString valHash) mempty]
+        []
+        mempty
+        [(credential, withdrawAmount)]
+        []
+        (Redeemer $ PlutusTx.toBuiltinData ())
+        (SpendingScript txOutRef Nothing)
 
 prop_spendValidator :: Property
 prop_spendValidator = forAll spendInput check
@@ -171,13 +150,9 @@ prop_spendValidator = forAll spendInput check
       txId <- genByteString 64
       valHash <- genByteString 56
       withdrawAmount <- chooseInteger (1, 1_000_000_000)
-      return (txId, valHash, withdrawAmount)
+      pure (txId, valHash, withdrawAmount)
     check (txId, valHash, withdrawAmount) =
-      let context :: ClosedTerm PScriptContext
-          context = pconstant $ mkSpendCtx txId valHash withdrawAmount
-          emptyData :: ClosedTerm PData
-          emptyData = (pforgetData . pconstantData) (0 :: Integer)
-       in fromPPartial $ spend # emptyData # emptyData # context
+      evalSucceeds $ spend # pconstant (mkSpendCtx txId valHash withdrawAmount)
 
 propertyTest :: TestTree
 propertyTest =

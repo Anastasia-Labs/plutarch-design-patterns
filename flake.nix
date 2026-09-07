@@ -1,77 +1,57 @@
 {
-  description = "A liqwid-nix Plutarch project";
-
-  nixConfig = {
-    extra-experimental-features = [ "nix-command" "flakes" "ca-derivations" ];
-    extra-substituters = [ "https://cache.iog.io" "https://cache.zw3rk.com" ];
-    extra-trusted-public-keys = [ "hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ=" "loony-tools:pr9m4BkM/5/eSTZlkQyRt57Jz7OMBxNSUiMC4FkcNfk=" ];
-    allow-import-from-derivation = "true";
-    max-jobs = "auto";
-    auto-optimise-store = "true";
-  };
+  description = "Plutarch design patterns";
 
   inputs = {
-    nixpkgs.follows = "liqwid-nix/nixpkgs";
-    nixpkgs-latest.url = "github:NixOS/nixpkgs";
+    nixpkgs.follows = "haskell-nix/nixpkgs-2411";
 
-    liqwid-nix = {
-      url = "github:Liqwid-Labs/liqwid-nix/v2.9.2";
-      inputs.nixpkgs-latest.follows = "nixpkgs-latest";
+    hackage = {
+      url = "github:input-output-hk/hackage.nix";
+      flake = false;
     };
 
-    liqwid-libs.url =
-      "github:Liqwid-Labs/liqwid-libs";
+    CHaP = {
+      url = "github:IntersectMBO/cardano-haskell-packages?ref=repo";
+      flake = false;
+    };
+
+    haskell-nix = {
+      url = "github:input-output-hk/haskell.nix/4c085ca207389ae2f2bfdc811afeebfcb326a399";
+      inputs.hackage.follows = "hackage";
+    };
+
+    systems.url = "github:nix-systems/default";
+
+    flake-utils = {
+      url = "github:numtide/flake-utils";
+      inputs.systems.follows = "systems";
+    };
+
+    iohk-nix = {
+      url = "github:input-output-hk/iohk-nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
+    pre-commit-hooks.url = "github:cachix/pre-commit-hooks.nix";
   };
 
-  outputs = inputs@{ self, flake-parts, ... }:
-    flake-parts.lib.mkFlake { inherit inputs; } {
-      imports = [
-        inputs.liqwid-nix.flakeModule
-      ];
-      systems = [ "x86_64-linux" "aarch64-darwin" "x86_64-darwin" "aarch64-linux" ];
-      perSystem = { config, self', inputs', pkgs, system, ... }:
-        let
-          pkgs = import inputs.nixpkgs-latest { inherit system; };
-        in
-        {
-          pre-commit = {
-            settings = {
-              src = ./.;
-              hooks = {
-                commitizen.enable = true;
-              };
-            };
-          };
-          onchain.default = {
-            src = ./.;
-            ghc.version = "ghc925";
-            fourmolu.package = pkgs.haskell.packages.ghc943.fourmolu;
-            hlint = { };
-            cabalFmt = { };
-            hasktags = { };
-            applyRefact = { };
-            shell = {
-              extraCommandLineTools =
-                [ pkgs.commitizen ];
-            };
-            hoogleImage.enable = false;
-            enableBuildChecks = true;
-            enableHaskellFormatCheck = true;
-            extraHackageDeps = [
-              "${inputs.liqwid-libs}/plutarch-quickcheck"
-              "${inputs.liqwid-libs}/plutarch-context-builder"
-              "${inputs.liqwid-libs}/plutarch-unit"
-              "${inputs.liqwid-libs}/liqwid-plutarch-extra"
-              "${inputs.liqwid-libs}/liqwid-script-export"
-              "${inputs.liqwid-libs.inputs.ply}/ply-core"
-              "${inputs.liqwid-libs.inputs.ply}/ply-plutarch"
-            ];
-          };
-          ci.required = [ "all_onchain" ];
-        };
+  outputs = inputs:
+    inputs.flake-utils.lib.eachDefaultSystem (system:
+      import ./nix/outputs.nix { inherit inputs system; }
+    );
 
-      # flake.hydraJobs.x86_64-linux = (
-      #   self.checks.x86_64-linux
-      # );
-    };
+  nixConfig = {
+    extra-substituters = [
+      "https://cache.iog.io"
+      "https://cache.zw3rk.com"
+      "https://cache.ml42.de"
+      "https://sc-tools.cachix.org"
+    ];
+    extra-trusted-public-keys = [
+      "hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ="
+      "loony-tools:pr9m4BkM/5/eSTZlkQyRt57Jz7OMBxNSUiMC4FkcNfk="
+      "cache.ml42.de:RKmSRP9TOc87nh9FZCM/b/pMIE3kBLEeIe71ReCBwRM="
+      "sc-tools.cachix.org-1:DY2+6v0HuMvoCt7wEqZTPqzZBcNk/Lexb72Vixz6n6I="
+    ];
+    allow-import-from-derivation = true;
+  };
 }

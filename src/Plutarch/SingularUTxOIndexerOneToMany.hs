@@ -7,26 +7,19 @@ module Plutarch.SingularUTxOIndexerOneToMany (
   matchAgg,
 ) where
 
-import Plutarch.Api.V2 (
-  PScriptPurpose (..),
-  PTxInInfo,
+import GHC.Generics (Generic)
+import Generics.SOP qualified as SOP
+import Plutarch.LedgerApi.V3 (
+  PRedeemer (..),
+  PScriptContext (..),
+  PScriptInfo (..),
+  PTxInInfo (..),
+  PTxInfo (..),
   PTxOut,
-  PValidator,
  )
-import Plutarch.Builtin (pasInt)
-import Plutarch.DataRepr (
-  DerivePConstantViaData (DerivePConstantViaData),
-  PDataFields,
- )
-import Plutarch.Lift (PConstantDecl, PUnsafeLiftDecl (PLifted))
+import Plutarch.Monadic qualified as P
 import Plutarch.Prelude
-import Plutarch.Unsafe (punsafeCoerce)
-import PlutusTx
-import "liqwid-plutarch-extra" Plutarch.Extra.TermCont (
-  pletC,
-  pletFieldsC,
-  pmatchC,
- )
+import PlutusTx qualified
 
 data SpendRedeemer = SpendRedeemer
   { inIx :: PlutusTx.BuiltinData
@@ -34,74 +27,101 @@ data SpendRedeemer = SpendRedeemer
   }
   deriving stock (Generic, Eq, Show)
 
-PlutusTx.makeLift ''SpendRedeemer
 PlutusTx.makeIsDataIndexed ''SpendRedeemer [('SpendRedeemer, 0)]
 
-newtype PSpendRedeemer (s :: S)
-  = PSpendRedeemer (Term s (PDataRecord '["inIx" ':= PData, "outIxs" ':= PBuiltinList PData]))
+data PSpendRedeemer (s :: S) = PSpendRedeemer
+  { pspendRedeemer'inIx :: Term s (PAsData PData)
+  , pspendRedeemer'outIxs ::
+      Term s (PAsData (PBuiltinList (PAsData PData)))
+  }
   deriving stock (Generic)
-  deriving anyclass (PlutusType, PIsData, PDataFields, PShow)
+  deriving anyclass (SOP.Generic, PIsData, PShow)
+  deriving (PlutusType, PValidateData) via DeriveAsDataStruct PSpendRedeemer
 
-instance DerivePlutusType PSpendRedeemer where type DPTStrat _ = PlutusTypeData
-instance PTryFrom PData PSpendRedeemer
-instance PUnsafeLiftDecl PSpendRedeemer where
-  type PLifted PSpendRedeemer = SpendRedeemer
 deriving via
-  (DerivePConstantViaData SpendRedeemer PSpendRedeemer)
+  DeriveDataPLiftable PSpendRedeemer SpendRedeemer
   instance
-    PConstantDecl SpendRedeemer
+    PLiftable PSpendRedeemer
 
-data PMyAggregator (s :: S) = PMyAggregator (Term s PInteger) (Term s (PBuiltinList PTxOut)) (Term s PInteger)
+data PMyAggregator (s :: S)
+  = PMyAggregator
+      (Term s PInteger)
+      (Term s (PBuiltinList PTxOut))
+      (Term s PInteger)
   deriving stock (Generic)
-  deriving anyclass (PlutusType, PEq, PShow)
-
-instance DerivePlutusType PMyAggregator where type DPTStrat _ = PlutusTypeScott
+  deriving anyclass (SOP.Generic, PEq, PShow)
+  deriving (PlutusType) via DeriveAsSOPStruct PMyAggregator
 
 spend ::
   Term s (PTxInInfo :--> PBool) ->
   Term s (PTxOut :--> PTxOut :--> PBool) ->
   Term s (PBuiltinList PTxOut :--> PInteger :--> PBool) ->
-  Term s PValidator
+  Term s (PScriptContext :--> PUnit)
 spend inputValidator inputOutputValidator collectiveOutputValidator =
-  plam $ \_datum redeemer ctx -> unTermCont $ do
-    red <- pletC $ punsafeCoerce @_ @_ @PSpendRedeemer redeemer
-    redF <- pletFieldsC @'["inIx", "outIxs"] red
-    ctxF <- pletFieldsC @'["txInfo", "purpose"] ctx
-    PSpending ownRef' <- pmatchC ctxF.purpose
-    ownRef <- pletC $ pfield @"_0" # ownRef'
-    txInfoF <- pletFieldsC @'["inputs", "outputs"] ctxF.txInfo
-    input <- pletC $ pelemAt @PBuiltinList # (pasInt # redF.inIx) # txInfoF.inputs
-    outIxs <- pletC $ pmap # pasInt # redF.outIxs
-    inInputF <- pletFieldsC @'["outRef", "resolved"] input
-
+  plam $ \ctx -> P.do
+    PScriptContext
+      { pscriptContext'txInfo
+      , pscriptContext'redeemer
+      , pscriptContext'scriptInfo
+      } <-
+      pmatch ctx
+    PRedeemer redeemer <- pmatch pscriptContext'redeemer
+    PSpendRedeemer {pspendRedeemer'inIx, pspendRedeemer'outIxs} <-
+      pmatch $ pfromData $ pparseData @PSpendRedeemer redeemer
+    PSpendingScript ownRef _ <- pmatch pscriptContext'scriptInfo
+    PTxInfo {ptxInfo'inputs, ptxInfo'outputs} <- pmatch pscriptContext'txInfo
+    input <-
+      plet $
+        pfromData $
+          pelemAt
+            # (pasInt # pfromData pspendRedeemer'inIx)
+            # pfromData ptxInfo'inputs
+    outIxs <-
+      plet $
+        pmap
+          # plam (\indexData -> pasInt # pfromData indexData)
+          # pfromData pspendRedeemer'outIxs
+    PTxInInfo {ptxInInfo'outRef, ptxInInfo'resolved} <- pmatch input
     aggregated <-
-      pletC $
+      plet $
         pfoldr
-          # (matchAgg inputOutputValidator # inInputF.resolved # txInfoF.outputs)
-          # pcon (PMyAggregator (plength # pfromData txInfoF.outputs) pnil 0)
+          # (matchAgg inputOutputValidator # ptxInInfo'resolved # pfromData ptxInfo'outputs)
+          # pcon (PMyAggregator (plength # pfromData ptxInfo'outputs) pnil 0)
           # outIxs
-    return $ pmatch aggregated $ \case
-      PMyAggregator _ outTxOuts outputCount -> unTermCont $ do
-        return $
-          popaque $
-            pif
-              ( ptraceIfFalse "Indicated input must match the spending one" (ownRef #== inInputF.outRef)
-                  #&& ptraceIfFalse "Input Validator Fails" (inputValidator # input)
-              )
-              (collectiveOutputValidator # outTxOuts # outputCount)
-              perror
-
-matchAgg :: Term s (PTxOut :--> PTxOut :--> PBool) -> Term s (PTxOut :--> PBuiltinList PTxOut :--> PInteger :--> PMyAggregator :--> PMyAggregator)
-matchAgg inputOutputValidator = plam $ \input outputs curIdx p -> unTermCont $ do
-  PMyAggregator prevIdx acc count <- pmatchC p
-  return $
+    PMyAggregator _ outTxOuts outputCount <- pmatch aggregated
     pif
-      (ptraceIfFalse (pshow prevIdx) (curIdx #< prevIdx))
+      ( ptraceInfoIfFalse "Indicated input must match the spending one" (ownRef #== ptxInInfo'outRef)
+          #&& ptraceInfoIfFalse "Input Validator Fails" (inputValidator # input)
+          #&& ptraceInfoIfFalse "Collective Output Validator Fails" (collectiveOutputValidator # outTxOuts # outputCount)
+      )
+      (pconstant ())
+      perror
+
+matchAgg ::
+  Term s (PTxOut :--> PTxOut :--> PBool) ->
+  Term
+    s
+    ( PTxOut
+        :--> PBuiltinList (PAsData PTxOut)
+        :--> PInteger
+        :--> PMyAggregator
+        :--> PMyAggregator
+    )
+matchAgg inputOutputValidator =
+  plam $ \input outputs curIdx aggregate -> P.do
+    PMyAggregator prevIdx acc count <- pmatch aggregate
+    pif
+      (ptraceInfoIfFalse (pshow prevIdx) (curIdx #< prevIdx))
       ( P.do
-          let outOutput = pelemAt @PBuiltinList # curIdx # outputs
+          let outOutput = pfromData $ pelemAt # curIdx # outputs
           pif
-            (ptraceIfFalse "Input Output Validator Fails" (inputOutputValidator # input # outOutput))
-            (pcon (PMyAggregator curIdx (pconcat # acc #$ psingleton # (pelemAt @PBuiltinList # curIdx # outputs)) (count + 1)))
+            (ptraceInfoIfFalse "Input Output Validator Fails" (inputOutputValidator # input # outOutput))
+            ( pcon $
+                PMyAggregator
+                  curIdx
+                  (pconcat # acc # (psingleton # outOutput))
+                  (count + 1)
+            )
             perror
       )
       perror
