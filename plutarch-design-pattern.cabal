@@ -23,7 +23,7 @@ extra-source-files: README.md
 
 common lang
   ghc-options:
-    -Wall -Wcompat -Wincomplete-uni-patterns -Wno-unused-do-bind
+    -Wall -Wcompat -Wincomplete-uni-patterns
     -Wno-partial-type-signatures -Wmissing-export-lists
     -Wincomplete-record-updates -Wmissing-deriving-strategies
     -Wno-name-shadowing -Wunused-foralls -fprint-explicit-foralls
@@ -97,6 +97,7 @@ common test-dependencies
   build-depends:
     , base
     , bytestring
+    , generics-sop
     , plutarch
     , plutarch-ledger-api
     , plutarch-onchain-lib
@@ -119,6 +120,7 @@ library
     Plutarch.SingularUTxOIndexerOneToMany
     Plutarch.StakeValidator
     Plutarch.TxLevelMinter
+    Plutarch.Utils
     Plutarch.ValidityRangeNormalization
 
   build-depends:
@@ -127,6 +129,7 @@ library
     , plutarch
     , plutarch-ledger-api
     , plutarch-onchain-lib
+    , plutus-core
     , plutus-ledger-api
     , plutus-tx
     , text
@@ -137,7 +140,7 @@ test-suite plutarch-design-pattern-test
   import:         lang, test-dependencies
   type:           exitcode-stdio-1.0
   main-is:        Spec.hs
-  hs-source-dirs: test
+  hs-source-dirs: test examples
   other-modules:
     Spec.MerkelizedValidatorSpec
     Spec.MultiUTxOIndexerOneToManySpec
@@ -147,5 +150,6 @@ test-suite plutarch-design-pattern-test
     Spec.StakeValidatorSpec
     Spec.TxLevelMinterSpec
     Spec.Utils
+    StakeValidator
 
   build-depends:  plutarch-design-pattern

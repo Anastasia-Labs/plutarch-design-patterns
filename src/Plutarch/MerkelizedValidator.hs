@@ -9,7 +9,6 @@ module Plutarch.MerkelizedValidator (
 
 import GHC.Generics (Generic)
 import Generics.SOP qualified as SOP
-import Plutarch.LedgerApi.AssocMap qualified as AssocMap
 import Plutarch.LedgerApi.V3 (
   PCredential,
   PRedeemer (..),
@@ -19,6 +18,7 @@ import Plutarch.LedgerApi.V3 (
  )
 import Plutarch.Monadic qualified as P
 import Plutarch.Prelude
+import Plutarch.Utils (PRedeemers)
 import PlutusTx (BuiltinData)
 import PlutusTx qualified
 
@@ -48,7 +48,7 @@ deriving via
 spend ::
   Term s PCredential ->
   Term s (PBuiltinList PData) ->
-  Term s (AssocMap.PUnsortedMap PScriptPurpose PRedeemer) ->
+  Term s PRedeemers ->
   Term s (PBuiltinList PData)
 spend stakCred inputState redeemers = P.do
   PRedeemer redeemerData <- pmatch $ pfindRewardingRedeemer stakCred redeemers
@@ -84,7 +84,7 @@ withdraw f =
 
 pfindRewardingRedeemer ::
   Term s PCredential ->
-  Term s (AssocMap.PUnsortedMap PScriptPurpose PRedeemer) ->
+  Term s PRedeemers ->
   Term s PRedeemer
 pfindRewardingRedeemer stakingCredential redeemers =
   ( pfix $ \self -> plam $ \pairs ->
