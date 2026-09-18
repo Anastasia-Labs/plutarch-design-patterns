@@ -1,3 +1,5 @@
+{-# OPTIONS_GHC -Wno-unused-do-bind #-}
+
 module Plutarch.Utils (
   PRedeemers,
   PWithdrawals,
@@ -6,6 +8,7 @@ module Plutarch.Utils (
   punsafeGetWithdrawScriptsRedeemerAt,
 ) where
 
+import Plutarch.Core.Utils (passert)
 import Plutarch.LedgerApi.AssocMap qualified as AssocMap
 import Plutarch.LedgerApi.V3 (
   PCredential (..),
@@ -59,7 +62,7 @@ punsafeGetWithdrawScriptsRedeemerAt withdrawScriptHash redeemers redeemerIndex =
   PBuiltinPair purposeData redeemerData <-
     pmatch $ pelemAtViaDrop redeemerIndex (pto (pto redeemers))
   let expectedPurpose = pcon $ PRewarding $ pcon $ PScriptCredential $ pdata withdrawScriptHash
-  pif
+  passert
+    "Selected redeemer does not match the withdrawal script purpose"
     (pfromData purposeData #== expectedPurpose)
-    (punsafeCoerce $ pto $ pfromData redeemerData)
-    perror
+  punsafeCoerce $ pto $ pfromData redeemerData
