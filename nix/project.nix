@@ -1,4 +1,4 @@
-{ inputs, pkgs, lib }:
+{ inputs, pkgs, lib, haddock }:
 
 pkgs.haskell-nix.cabalProject' ({ ... }: {
   name = "plutarch-design-pattern";
@@ -14,6 +14,13 @@ pkgs.haskell-nix.cabalProject' ({ ... }: {
   inputMap = {
     "https://chap.intersectmbo.org/" = inputs.CHaP;
   };
+
+  modules = [
+    {
+      # GHC #25739 is fixed in our Haddock build; keep all dependency docs.
+      setupHaddockFlags = [ "--with-haddock=${haddock}/bin/haddock" ];
+    }
+  ];
 
   cabalProjectLocal = ''
     package plutarch-design-pattern

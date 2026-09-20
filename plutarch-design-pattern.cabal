@@ -97,17 +97,24 @@ common test-dependencies
   build-depends:
     , base
     , bytestring
+    , cardano-api
+    , convex-base
+    , convex-coin-selection
+    , convex-mockchain
+    , convex-wallet
     , generics-sop
     , plutarch
     , plutarch-ledger-api
     , plutarch-onchain-lib
     , plutarch-testlib
+    , plutus-core
     , plutus-ledger-api
     , plutus-tx
     , tasty
     , tasty-hunit
     , tasty-quickcheck
     , text
+    , transformers
 
 library
   import:          lang
@@ -142,6 +149,7 @@ test-suite plutarch-design-pattern-test
   main-is:        Spec.hs
   hs-source-dirs: test examples
   other-modules:
+    Spec.Context
     Spec.MerkelizedValidatorSpec
     Spec.MultiUTxOIndexerOneToManySpec
     Spec.MultiUTxOIndexerSpec
@@ -150,6 +158,7 @@ test-suite plutarch-design-pattern-test
     Spec.StakeValidatorSpec
     Spec.TxLevelMinterSpec
     Spec.Utils
+    Spec.WithdrawalSpec
     StakeValidator
 
   build-depends:  plutarch-design-pattern

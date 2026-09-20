@@ -1,0 +1,29 @@
+Backport GHC #25739 at Haddock's call site. Promoted data constructors
+cannot have datatype contexts, so their context is empty. GHC 9.6.6's
+tyConStupidTheta panics on them instead.
+
+Upstream: https://github.com/ghc/ghc/commit/8d33d048dbe159a045a4c304fa92318365a3dfe2
+
+--- a/src/Haddock/Convert.hs
++++ b/src/Haddock/Convert.hs
+@@ -279,7 +279,10 @@ synifyTyCon _prr coax tc
+                      , tcdRhs = synifyType WithinType [] ty }
+   | otherwise = do
+   -- (closed) newtype and data
+-  let alg_ctx = synifyCtx (tyConStupidTheta tc)
++  let alg_ctx
++        -- Promoted constructors cannot have datatype contexts (GHC #25739).
++        | isPromotedDataCon tc = Nothing
++        | otherwise = Just (synifyCtx (tyConStupidTheta tc))
+       name = case coax of
+         Just a -> synifyNameN a -- Data families are named according to their
+                            -- CoAxioms, not their TyCons
+@@ -314,7 +317,7 @@ synifyTyCon _prr coax tc
+   let -- "deriving" doesn't affect the signature, no need to specify any.
+       alg_deriv = []
+       defn = HsDataDefn { dd_ext     = noExtField
+-                    , dd_ctxt    = Just alg_ctx
++                    , dd_ctxt    = alg_ctx
+                     , dd_cType   = Nothing
+                     , dd_kindSig = kindSig
+                     , dd_cons    = cons

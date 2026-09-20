@@ -5,10 +5,12 @@ let
 
   pkgs = import ./pkgs.nix { inherit inputs system; };
 
-  project = import ./project.nix { inherit inputs pkgs lib; };
+  haddock = import ./haddock.nix { inherit pkgs; };
+
+  project = import ./project.nix { inherit inputs pkgs lib haddock; };
 
   mkShellConfig = ghc:
-    import ./shell.nix { inherit inputs pkgs lib project ghc system; };
+    import ./shell.nix { inherit inputs pkgs lib project ghc system haddock; };
 
   ghc966Shell = mkShellConfig "ghc966";
 
@@ -23,6 +25,7 @@ let
     projectFlake.checks
     // {
       formatting = ghc966Shell.preCommitCheck;
+      haddock-type-data = import ./tests/haddock.nix { inherit pkgs haddock; };
     };
 in
 {

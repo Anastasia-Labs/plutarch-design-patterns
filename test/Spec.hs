@@ -7,6 +7,7 @@ import Spec.SingularUTxOIndexerOneToManySpec
 import Spec.SingularUTxOIndexerSpec
 import Spec.StakeValidatorSpec
 import Spec.TxLevelMinterSpec
+import Spec.WithdrawalSpec qualified
 import Test.Tasty (defaultMain, testGroup)
 
 main :: IO ()
@@ -29,4 +30,5 @@ main = do
       , Spec.MultiUTxOIndexerSpec.propertyTest
       , Spec.MultiUTxOIndexerOneToManySpec.unitTest
       , Spec.MultiUTxOIndexerOneToManySpec.propertyTest
+      , Spec.WithdrawalSpec.tests
       ]

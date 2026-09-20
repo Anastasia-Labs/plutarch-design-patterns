@@ -2,6 +2,7 @@
 
 * [Plutarch Library for Common Design Patterns in Cardano Smart Contracts](#plutarch-library-for-common-design-patterns-in-cardano-smart-contracts)
   * [How to Use](#how-to-use)
+  * [Tests and execution costs](#tests-and-execution-costs)
   * [Provided Patterns](#provided-patterns)
     * [Stake Validator](#stake-validator)
       * [Endpoints](#endpoints)
@@ -95,17 +96,30 @@ The development shell uses GHC 9.6.6 and includes Cabal, HLS, fourmolu,
 cabal-fmt, and the configured pre-commit hooks. Run `make help` to list the
 available commands.
 
-Build the library and test suite:
+Hoogle and dependency Haddock documentation are enabled. The shell builds
+Haddock from the pinned GHC sources with a backport of
+[GHC #25739](https://gitlab.haskell.org/ghc/ghc/-/issues/25739), which fixes
+documentation generation for exported `type data` constructors.
+
+Build all project packages, including the library and test suite:
 
 ```sh
-cabal build all
+make build
 ```
 
 Run the tests:
 
 ```sh
-cabal test --test-show-details=direct
+make test
 ```
+
+`make build` runs `cabal build all`; `make test` runs this package's test suite.
+Both use `cabal.project` and the default `dist-newstyle` build directory.
+Cabal may rebuild dependencies with public sublibraries even when Nix has
+already built them; see [Cabal #6039](https://github.com/haskell/cabal/issues/6039).
+The development shell includes pkg-config, LMDB, and (on Linux) liburing so
+Cabal can resolve and build the `cardano-lmdb` and `blockio-uring` dependencies
+in that case.
 
 Evaluate and build the checks exported by the flake:
 
@@ -114,7 +128,8 @@ nix flake check
 ```
 
 This includes the library and test checks as well as cabal-fmt and fourmolu
-formatting checks. To apply Haskell formatting locally or run every configured
+formatting checks, plus a Haddock regression check for HTML, source links, and
+Hoogle output. To apply Haskell formatting locally or run every configured
 pre-commit hook directly:
 
 ```sh
@@ -122,6 +137,30 @@ make format
 pre-commit run --all-files
 ```
 
+
+## Tests and execution costs
+
+[`Spec.WithdrawalSpec`](test/Spec/WithdrawalSpec.hs) is a worked Tasty/QuickCheck
+example: register a script credential, fund its rewards, and submit a withdrawal
+using `Convex.BuildTx` and `Convex.MockChain.CoinSelection.tryBalanceAndSubmit`.
+The ledger constructs the context; [`Spec.Context`](test/Spec/Context.hs) retrieves
+the invocation from accepted mockchain transactions:
+
+```haskell
+import Cardano.Api qualified as C
+import PlutusLedgerApi.V3 qualified as V3
+import Spec.Context (getScriptContext)
+
+-- Inside a V3 mockchain scenario, after submitting tx:
+ctx <- getScriptContext (C.getTxId $ C.getTxBody tx) (V3.RewardingScript credential)
+```
+
+Use Catalyst's `Plutarch.Core.Eval.evalWithArgsT` to check results and obtain
+execution budgets, and `Plutarch.Core.Scripts` for compilation and script size.
+The example checks the returned payload and amount, then changes the extracted
+redeemer purpose and checks the exact rejection. This mutation tests the helper;
+it does not represent a ledger-valid transaction. Reported CPU/memory costs use
+the bundled testing cost model with tracing disabled, not mainnet parameters.
 
 ## Provided Patterns
 

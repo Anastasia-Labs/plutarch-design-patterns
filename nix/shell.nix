@@ -1,4 +1,4 @@
-{ inputs, pkgs, lib, project, ghc, system }:
+{ inputs, pkgs, lib, project, ghc, system, haddock }:
 
 let
   allTools = {
@@ -45,6 +45,7 @@ let
   };
 
   commonPkgs = [
+    haddock
     tools.haskell-language-server
     tools.stylish-haskell
     tools.fourmolu
@@ -59,13 +60,15 @@ let
     pkgs.bzip2
     pkgs.gawk
     pkgs.zlib
+    # Cabal can rebuild ouroboros-consensus and its cardano-lmdb dependency.
+    pkgs.lmdb
     pkgs.cacert
     pkgs.curl
     pkgs.bash
     pkgs.git
     pkgs.gnumake
     pkgs.which
-  ];
+  ] ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.liburing ];
 in
 {
   inherit preCommitCheck;
@@ -74,11 +77,13 @@ in
     name = "plutarch-design-pattern-${project.args.compiler-nix-name}";
 
     buildInputs = commonPkgs;
+    nativeBuildInputs = [ pkgs.pkg-config ];
 
     withHoogle = true;
 
     shellHook = ''
       ${preCommitCheck.shellHook}
+      export PATH="${haddock}/bin:$PATH"
       export PS1="\n\[\033[1;32m\][nix-shell:\w]\$\[\033[0m\] "
     '';
   };

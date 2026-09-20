@@ -6,7 +6,7 @@ help:
 	@echo "Targets:"
 	@echo "  help   -- show this help"
 	@echo "  shell  -- nix develop"
-	@echo "  build  -- cabal build"
+	@echo "  build  -- cabal build all"
 	@echo "  test   -- cabal test"
 	@echo "  clean  -- cabal clean"
 	@echo "  format -- format Haskell source files"
@@ -17,11 +17,11 @@ shell:
 
 .PHONY: build
 build:
-	cabal build
+	cabal build all
 
 .PHONY: test
 test:
-	cabal test
+	cabal test plutarch-design-pattern-test --test-show-details=direct
 
 .PHONY: clean
 clean:
